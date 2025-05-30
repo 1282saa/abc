@@ -29,6 +29,7 @@ load_dotenv(dotenv_path=env_path)
 from src.modules.ainova_engine import AINOVAEngine
 from src.utils.logger import setup_logger
 from src.modules.content_creator.api import router as content_creator_router, init_app
+from src.api.qa_routes import router as qa_router  # QA 시스템 라우터 임포트
 
 # 로거 설정
 logger = setup_logger("ainova.api")
@@ -84,6 +85,9 @@ async def get_ainova_engine():
 
 # 콘텐츠 제작자 API 라우터 추가
 app.include_router(content_creator_router)
+
+# QA 시스템 API 라우터 추가
+app.include_router(qa_router)
 
 # 다운로드 엔드포인트
 @app.get("/download/{file_path:path}", response_class=FileResponse)
