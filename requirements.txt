@@ -1,0 +1,26 @@
+# API 및 서버
+fastapi==0.103.1
+uvicorn==0.23.2
+python-dotenv==1.0.0
+httpx==0.24.1
+pydantic==2.3.0
+requests==2.31.0
+
+# 데이터 처리 및 분석
+numpy==1.24.3
+pandas==2.1.0
+scikit-learn==1.3.0
+networkx==3.1
+matplotlib==3.7.2
+
+# 자연어 처리
+nltk==3.8.1
+
+# 캐싱 및 데이터베이스
+redis==4.6.0
+
+# 이미지 처리
+Pillow==10.0.0
+
+# 로깅 및 유틸리티
+python-json-logger==2.0.7

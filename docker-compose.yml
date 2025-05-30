@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # AI NOVA 백엔드 서비스
+  ainova-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ainova:latest
+    container_name: ainova-backend
+    restart: unless-stopped
+    environment:
+      - MODE=backend
+      - BIGKINDS_API_KEY=${BIGKINDS_API_KEY}
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - DB_HOST=db
+      - CACHE_HOST=redis
+    env_file:
+      - ./config/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - db
+
+  # AI NOVA 프론트엔드 서비스
+  ainova-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ainova:latest
+    container_name: ainova-frontend
+    restart: unless-stopped
+    environment:
+      - MODE=frontend
+      - API_URL=http://ainova-backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - ainova-backend
+
+  # Redis 캐시
+  redis:
+    image: redis:alpine
+    container_name: ainova-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  # PostgreSQL 데이터베이스
+  db:
+    image: postgres:13-alpine
+    container_name: ainova-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-ainova_user}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-ainova_password}
+      - POSTGRES_DB=${DB_NAME:-ainova}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  redis-data:
+  postgres-data:
