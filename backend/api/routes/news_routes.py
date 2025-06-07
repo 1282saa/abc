@@ -657,6 +657,206 @@ async def get_company_news_summary(
         logger.error(f"기업 뉴스 자동 요약 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"뉴스 요약 중 오류 발생: {str(e)}")
 
+@router.get("/company/{company_name}/report/{report_type}")
+async def get_company_report(
+    company_name: str = Path(..., description="기업명"),
+    report_type: str = Path(..., description="레포트 타입 (daily, weekly, monthly, quarterly, yearly)"),
+    reference_date: Optional[str] = Query(None, description="기준 날짜 (YYYY-MM-DD), 없으면 오늘 날짜 사용"),
+    bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)
+):
+    """기업 기간별 뉴스 레포트 생성
+    
+    기업명과 레포트 타입에 따라 기간별 뉴스 레포트를 생성합니다.
+    """
+    logger = setup_logger("api.news.company_report")
+    logger.info(f"기업 레포트 요청: {company_name}, 타입: {report_type}")
+    
+    valid_report_types = ["daily", "weekly", "monthly", "quarterly", "yearly"]
+    if report_type not in valid_report_types:
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 레포트 타입입니다. 유효한 타입: {', '.join(valid_report_types)}")
+    
+    try:
+        # OpenAI API 키 확인
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        if not openai.api_key:
+            raise HTTPException(status_code=500, detail="AI 요약 서비스를 사용할 수 없습니다")
+        
+        # BigKinds API로 기업 뉴스 레포트 데이터 조회
+        report_data = bigkinds_client.get_company_news_report(
+            company_name=company_name,
+            report_type=report_type,
+            reference_date=reference_date
+        )
+        
+        if not report_data.get("success", False):
+            raise HTTPException(status_code=404, detail=f"기업 뉴스 레포트를 생성할 수 없습니다")
+        
+        articles = report_data.get("articles", [])
+        if not articles:
+            return {
+                **report_data,
+                "summary": f"{company_name}에 대한 {report_data.get('report_type_kr')} 레포트 기간 내 뉴스가 없습니다."
+            }
+        
+        # 각 기사에 고유 ID 부여 (인용 참조용)
+        for i, article in enumerate(articles):
+            if not article.get("ref_id"):
+                article["ref_id"] = f"ref{i+1}"
+        
+        # 기사 내용 준비 (전체 content 사용)
+        articles_text = ""
+        for i, article in enumerate(articles, 1):
+            ref_id = article.get("ref_id", f"ref{i}")
+            title = article.get("title", "")
+            content = article.get("content", "") or article.get("summary", "")
+            provider = article.get("provider", "")
+            published_at = article.get("published_at", "")
+            
+            articles_text += f"[기사 {ref_id}]\n"
+            articles_text += f"제목: {title}\n"
+            articles_text += f"언론사: {provider}\n"
+            articles_text += f"발행일: {published_at}\n"
+            articles_text += f"내용: {content}\n\n"
+        
+        # 토큰 한계를 초과하는 경우 청킹 및 요약 처리
+        max_tokens = 4000  # 청크당 최대 토큰 수 (대략적인 추정)
+        chunks = []
+        current_chunk = ""
+        current_tokens = 0
+        
+        for i, article in enumerate(articles, 1):
+            ref_id = article.get("ref_id", f"ref{i}")
+            article_text = f"[기사 {ref_id}]\n"
+            article_text += f"제목: {article.get('title', '')}\n"
+            article_text += f"내용: {article.get('content', '') or article.get('summary', '')}\n\n"
+            
+            # 대략적으로 토큰 수 추정 (영어 기준 4자당 1토큰, 한글은 더 적을 수 있음)
+            article_tokens = len(article_text) // 2
+            
+            if current_tokens + article_tokens > max_tokens:
+                chunks.append(current_chunk)
+                current_chunk = article_text
+                current_tokens = article_tokens
+            else:
+                current_chunk += article_text
+                current_tokens += article_tokens
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        # 기간에 따른 요약 프롬프트 설정
+        period_from = report_data["period"]["from"]
+        period_to = report_data["period"]["to"]
+        
+        prompts = {
+            "daily": f"{period_to}일 하루 동안의 {company_name} 관련 주요 뉴스를 요약해주세요.",
+            "weekly": f"{period_from}부터 {period_to}까지 일주일 간의 {company_name} 관련 주요 뉴스와 동향을 요약해주세요.",
+            "monthly": f"{period_from}부터 {period_to}까지 한 달 간의 {company_name}의 주요 이슈, 동향 및 변화를 분석하여 요약해주세요.",
+            "quarterly": f"{period_from}부터 {period_to}까지 3개월 간의 {company_name}의 분기별 성과, 주요 이슈 및 변화를 분석하여 요약해주세요.",
+            "yearly": f"{period_from}부터 {period_to}까지 1년 간의 {company_name}의 주요 이슈, 성과, 시장 변화 및 전략적 방향을 종합적으로 분석하여 요약해주세요."
+        }
+        
+        # 개선된 시스템 프롬프트 - 인용 정보 포함 요청
+        system_prompt = """당신은 금융 및 경제 분야의 전문 애널리스트입니다. 주어진 뉴스 기사들을 분석하여 객관적이고 통찰력 있는 요약을 제공해주세요.
+
+요약 시 다음 사항을 지켜주세요:
+1. 중요한 사실이나 주장을 인용할 때 반드시 출처를 표시하세요. 예: [기사 ref1]
+2. 직접 인용구는 큰따옴표로 표시하고 출처를 명시하세요. 예: "삼성전자는 신규 투자를 발표했다"[기사 ref2]
+3. 요약은 주요 이슈, 동향, 영향으로 구분하여 작성하세요.
+4. 요약 말미에 모든 참고 기사 목록을 포함하세요.
+
+이 형식을 반드시 지켜 작성해주세요."""
+
+        user_prompt = prompts.get(report_type, prompts["daily"]) + "\n\n각 기사의 중요한 내용을 인용할 때는 [기사 ref번호] 형태로 출처를 표시해주세요."
+        
+        # 청크가 여러 개인 경우 각각 요약 후 메타 요약
+        final_summary = ""
+        if len(chunks) > 1:
+            chunk_summaries = []
+            
+            for i, chunk in enumerate(chunks, 1):
+                try:
+                    chunk_response = openai.ChatCompletion.create(
+                        model="gpt-4-turbo-preview",
+                        messages=[
+                            {"role": "system", "content": "주어진 뉴스 기사들의 핵심 내용을 간결하게 요약해주세요. 중요한 내용을 인용할 때는 [기사 ref번호] 형태로 출처를 표시해주세요."},
+                            {"role": "user", "content": f"다음은 {company_name} 관련 뉴스 기사입니다. 핵심 내용만 간결하게 요약해주세요. 중요한 내용을 인용할 때는 [기사 ref번호] 형태로 출처를 표시해주세요:\n\n{chunk}"}
+                        ],
+                        max_tokens=800,
+                        temperature=0.3
+                    )
+                    
+                    chunk_summary = chunk_response.choices[0].message.content
+                    chunk_summaries.append(f"파트 {i} 요약: {chunk_summary}")
+                except Exception as e:
+                    logger.error(f"청크 {i} 요약 생성 오류: {e}", exc_info=True)
+                    chunk_summaries.append(f"파트 {i} 요약: 요약 생성 실패")
+            
+            # 메타 요약 생성
+            meta_summaries_text = "\n\n".join(chunk_summaries)
+            try:
+                meta_response = openai.ChatCompletion.create(
+                    model="gpt-4-turbo-preview",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"{user_prompt}\n\n다음은 여러 부분으로 나눠진 요약입니다. 이를 통합하여 최종 요약을 작성해주세요. 각 부분에 있는 인용 정보([기사 ref번호])는 그대로 유지해주세요:\n\n{meta_summaries_text}"}
+                    ],
+                    max_tokens=1500,
+                    temperature=0.3
+                )
+                
+                final_summary = meta_response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"메타 요약 생성 오류: {e}", exc_info=True)
+                final_summary = "요약 생성 중 오류가 발생했습니다."
+        else:
+            # 단일 청크일 경우 바로 요약
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4-turbo-preview",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"{user_prompt}\n\n다음은 {company_name} 관련 뉴스 기사입니다. 각 기사의 중요한 내용을 인용할 때는 [기사 ref번호] 형태로 출처를 표시해주세요:\n\n{articles_text}"}
+                    ],
+                    max_tokens=1500,
+                    temperature=0.3
+                )
+                
+                final_summary = response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"요약 생성 오류: {e}", exc_info=True)
+                final_summary = "요약 생성 중 오류가 발생했습니다."
+        
+        # 모든 기사 정보 포함 (content 필드를 제외하고 기본 정보만 포함)
+        detailed_articles = []
+        for article in articles:
+            detailed_articles.append({
+                "id": article.get("id", ""),
+                "ref_id": article.get("ref_id", ""),
+                "title": article.get("title", ""),
+                "summary": article.get("summary", ""),
+                "provider": article.get("provider", ""),
+                "published_at": article.get("published_at", ""),
+                "url": article.get("url", ""),
+                "category": article.get("category", ""),
+                "byline": article.get("byline", "")
+            })
+        
+        # 최종 결과 반환
+        return {
+            **report_data,
+            "summary": final_summary,
+            "detailed_articles": detailed_articles,  # 모든 기사의 상세 정보 포함
+            "generated_at": datetime.now().isoformat(),
+            "model_used": "gpt-4-turbo-preview"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"기업 레포트 생성 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"기업 레포트 생성 중 오류 발생: {str(e)}")
+
 @router.get("/watchlist")
 async def get_watchlist_data(
     bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)

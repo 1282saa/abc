@@ -870,6 +870,81 @@ class BigKindsClient:
             "total_found": formatted_result.get("total_hits", 0)
         }
     
+    def get_company_news_report(
+        self,
+        company_name: str,
+        report_type: str,
+        reference_date: Optional[str] = None,
+        max_articles: int = 100
+    ) -> Dict[str, Any]:
+        """기업 기간별 뉴스 레포트 생성
+        
+        Args:
+            company_name: 기업명
+            report_type: 레포트 타입 (daily, weekly, monthly, quarterly, yearly)
+            reference_date: 기준 날짜 (None이면 오늘 날짜 사용)
+            max_articles: 최대 기사 수
+            
+        Returns:
+            기간별 뉴스 레포트 데이터
+        """
+        if not reference_date:
+            reference_date = datetime.now().strftime("%Y-%m-%d")
+        
+        end_date = datetime.strptime(reference_date, "%Y-%m-%d")
+        
+        # 레포트 타입에 따라 시작 날짜 계산
+        if report_type == "daily":
+            start_date = end_date
+        elif report_type == "weekly":
+            start_date = end_date - timedelta(days=7)
+        elif report_type == "monthly":
+            start_date = end_date - timedelta(days=30)
+        elif report_type == "quarterly":
+            start_date = end_date - timedelta(days=90)
+        elif report_type == "yearly":
+            start_date = end_date - timedelta(days=365)
+        else:
+            raise ValueError(f"지원하지 않는 레포트 타입: {report_type}")
+        
+        date_from = start_date.strftime("%Y-%m-%d")
+        date_to = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")  # 종료일 +1일 (포함)
+        
+        # 기간에 맞는 뉴스 검색
+        news_response = self.get_company_news(
+            company_name=company_name,
+            date_from=date_from,
+            date_to=date_to,
+            return_size=max_articles
+        )
+        
+        # 응답 포맷팅
+        formatted_response = self.format_news_response(news_response)
+        articles = formatted_response.get("documents", [])
+        
+        # 기간별 메타데이터 생성
+        period_names = {
+            "daily": "일간",
+            "weekly": "주간",
+            "monthly": "월간",
+            "quarterly": "분기별",
+            "yearly": "연간"
+        }
+        
+        return {
+            "success": True,
+            "company": company_name,
+            "report_type": report_type,
+            "report_type_kr": period_names.get(report_type, report_type),
+            "reference_date": reference_date,
+            "period": {
+                "from": date_from,
+                "to": end_date.strftime("%Y-%m-%d")  # 원래 종료일
+            },
+            "total_articles": len(articles),
+            "articles": articles
+        }
+    
     # 호환성을 위한 래퍼 메소드들
     def search(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """기존 코드 호환성을 위한 래퍼 메소드"""
