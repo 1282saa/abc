@@ -1,9 +1,9 @@
 /**
- * API 서비스 모듈
+ * News API 서비스 모듈
+ * BigKinds 뉴스 API와 통신하는 클라이언트
  */
 
 // Vite 환경 변수는 import.meta.env 를 통해 접근합니다.
-// .env 파일에서는 VITE_API_URL 로 정의해 주세요.
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 // 요청 옵션
@@ -13,53 +13,147 @@ const defaultOptions: RequestInit = {
   },
 };
 
-// 타임라인 요청 인터페이스
-export interface TimelineRequest {
-  keywords: string;
+// 뉴스 기사 인터페이스
+export interface NewsArticle {
+  id: string;
+  title: string;
+  content: string;
+  summary: string;
+  published_at: string;
+  dateline: string;
+  category: string[];
+  provider: string;
+  provider_code: string;
+  url: string;
+  byline: string;
+  images: string[];
+}
+
+// 타임라인 항목 인터페이스
+export interface TimelineItem {
+  date: string;
+  articles: NewsArticle[];
+  count: number;
+}
+
+// 언론사별 기사 수 breakdown 인터페이스
+export interface ProviderBreakdown {
+  provider: string;
+  provider_code: string;
+  count: number;
+}
+
+// 이슈 토픽 인터페이스 (백엔드 응답에 맞게 수정)
+export interface IssueTopic {
+  rank: number;
+  title: string;
+  count: number;
+  related_news: string[];
+  provider_breakdown?: ProviderBreakdown[]; // 언론사별 기사 수
+  related_news_ids?: string[]; // 실제 뉴스 ID 목록
+  cluster_ids?: string[]; // 원본 클러스터 ID
+  // 프론트엔드 호환성을 위한 선택적 필드들
+  topic_id?: string;
+  topic_name?: string;
+  score?: number;
+  news_cluster?: string[];
+  keywords?: string[];
+  topic?: string;
+  topic_rank?: number;
+  topic_keyword?: string;
+}
+
+// 인기 키워드 인터페이스 (백엔드 응답에 맞게 수정)
+export interface PopularKeyword {
+  rank: number;
+  keyword: string;
+  count: number;
+  trend: string;
+  // 프론트엔드 호환성을 위한 선택적 필드들
+  category?: string;
+  score?: number;
+}
+
+// 최신 뉴스 응답 인터페이스
+export interface LatestNewsResponse {
+  today_issues: IssueTopic[];
+  popular_keywords: PopularKeyword[];
+  timestamp: string;
+}
+
+// 기업 뉴스 요청 인터페이스
+export interface CompanyNewsRequest {
+  company_name: string;
   date_from?: string;
   date_to?: string;
+  limit?: number;
 }
 
-// 타임라인 응답 인터페이스
-export interface TimelineResponse {
-  timeline: Array<{
-    date: string;
-    title: string;
-    summary: string;
-  }>;
+// 키워드 뉴스 요청 인터페이스
+export interface KeywordNewsRequest {
+  keyword: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
 }
 
-// QA 요청 인터페이스
-export interface QARequest {
-  query: string;
-  use_sources?: boolean;
+// 뉴스 타임라인 응답 인터페이스
+export interface NewsTimelineResponse {
+  keyword?: string;
+  company?: string;
+  period: {
+    from: string;
+    to: string;
+  };
+  total_count: number;
+  timeline: TimelineItem[];
 }
 
-// QA 응답 인터페이스
-export interface QAResponse {
-  answer: string;
-  sources?: Array<{
-    title: string;
-    url: string;
-    content: string;
-  }>;
+// AI 요약 요청 인터페이스
+export interface AISummaryRequest {
+  news_ids: string[];
+  summary_type: "issue" | "quote" | "data";
 }
 
-// 요약 요청 인터페이스
-export interface SummaryRequest {
-  url: string;
-  keywords?: string[];
-}
-
-// 요약 응답 인터페이스
-export interface SummaryResponse {
+// AI 요약 응답 인터페이스
+export interface AISummaryResponse {
   title: string;
-  original_text: string;
   summary: string;
-  keywords: string[];
+  type: string;
+  key_points?: string[];
+  key_quotes?: Array<{
+    source: string;
+    quote: string;
+  }>;
+  key_data?: Array<{
+    metric: string;
+    value: string;
+    context: string;
+  }>;
+  articles_analyzed: number;
+  generated_at: string;
+  model_used: string;
 }
 
-// 주식 캘린더 요청 인터페이스
+// 뉴스 상세 정보 응답 인터페이스
+export interface NewsDetailResponse {
+  success: boolean;
+  news: NewsArticle;
+  has_original_link: boolean;
+}
+
+// 관심 종목 추천 응답 인터페이스
+export interface WatchlistSuggestion {
+  name: string;
+  code: string;
+  category: string;
+}
+
+export interface WatchlistSuggestionsResponse {
+  suggestions: WatchlistSuggestion[];
+}
+
+// 주식 캘린더 요청 인터페이스 (기존 유지)
 export interface StockCalendarRequest {
   startDate: string;
   endDate: string;
@@ -67,13 +161,19 @@ export interface StockCalendarRequest {
   eventTypes?: string[];
 }
 
-// 주식 캘린더 응답 인터페이스
+// 주식 캘린더 응답 인터페이스 (기존 유지)
 export interface StockCalendarResponse {
   events: Array<{
     id: string;
     title: string;
     date: string;
-    eventType: "earnings" | "dividend" | "holiday" | "ipo" | "economic" | "split";
+    eventType:
+      | "earnings"
+      | "dividend"
+      | "holiday"
+      | "ipo"
+      | "economic"
+      | "split";
     stockCode?: string;
     stockName?: string;
     description?: string;
@@ -81,27 +181,15 @@ export interface StockCalendarResponse {
   }>;
 }
 
-// API 서비스 객체
-const apiService = {
+// News API 서비스 객체
+const newsApiService = {
   /**
-   * 타임라인 API 호출
+   * 최신 뉴스 정보 가져오기
    */
-  async getTimeline(params: TimelineRequest): Promise<TimelineResponse> {
-    // 백엔드 QueryRequest { query, search_params } 구조에 맞춰 변환
-    const backendBody: any = {
-      query: params.keywords,
-    };
-
-    if (params.date_from && params.date_to) {
-      backendBody.search_params = {
-        date_range: [params.date_from, params.date_to],
-      };
-    }
-
-    const response = await fetch(`${API_BASE_URL}/api/qa/timeline`, {
+  async getLatestNews(): Promise<LatestNewsResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/news/latest`, {
       ...defaultOptions,
-      method: "POST",
-      body: JSON.stringify(backendBody),
+      method: "GET",
     });
 
     if (!response.ok) {
@@ -112,13 +200,15 @@ const apiService = {
   },
 
   /**
-   * QA API 호출
+   * 기업 뉴스 타임라인 조회
    */
-  async getAnswer(params: QARequest): Promise<QAResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/qa/query`, {
+  async getCompanyNews(
+    request: CompanyNewsRequest
+  ): Promise<NewsTimelineResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/news/company`, {
       ...defaultOptions,
       method: "POST",
-      body: JSON.stringify({ query: params.query, stream: false }),
+      body: JSON.stringify(request),
     });
 
     if (!response.ok) {
@@ -129,50 +219,103 @@ const apiService = {
   },
 
   /**
-   * 스트리밍 QA API 호출 (SSE)
+   * 키워드 뉴스 타임라인 조회
    */
-  getAnswerStream(
-    params: QARequest,
-    onData: (data: string) => void,
-    onComplete: () => void,
-    onError: (error: Error) => void
-  ): () => void {
-    const eventSource = new EventSource(
-      `${API_BASE_URL}/api/qa/query?stream=true&query=${encodeURIComponent(
-        params.query
-      )}`
+  async getKeywordNews(
+    request: KeywordNewsRequest
+  ): Promise<NewsTimelineResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/news/keyword`, {
+      ...defaultOptions,
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 뉴스 상세 정보 조회
+   */
+  async getNewsDetail(newsId: string): Promise<NewsDetailResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/news/detail/${newsId}`, {
+      ...defaultOptions,
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * AI 요약 생성
+   */
+  async generateAISummary(
+    request: AISummaryRequest
+  ): Promise<AISummaryResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/news/ai-summary`, {
+      ...defaultOptions,
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 관심 종목 추천 목록 조회
+   */
+  async getWatchlistSuggestions(): Promise<WatchlistSuggestionsResponse> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/news/watchlist/suggestions`,
+      {
+        ...defaultOptions,
+        method: "GET",
+      }
     );
 
-    eventSource.onmessage = (event) => {
-      const data = event.data;
-      if (data === "[DONE]") {
-        eventSource.close();
-        onComplete();
-      } else {
-        onData(data);
-      }
-    };
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
 
-    eventSource.onerror = (error) => {
-      eventSource.close();
-      onError(new Error("SSE 연결 오류"));
-    };
-
-    // 연결 종료 함수 반환
-    return () => {
-      eventSource.close();
-    };
+    return response.json();
   },
 
   /**
-   * 요약 API 호출
+   * 뉴스 검색 (GET 방식)
    */
-  async getSummary(params: SummaryRequest): Promise<SummaryResponse> {
-    // 백엔드 QueryRequest 구조에 맞춰 변환
-    const response = await fetch(`${API_BASE_URL}/api/qa/summarize`, {
+  async searchNews(
+    keyword: string,
+    dateFrom?: string,
+    dateTo?: string,
+    limit: number = 30
+  ): Promise<NewsTimelineResponse> {
+    const params = new URLSearchParams({
+      keyword,
+      limit: limit.toString(),
+    });
+
+    if (dateFrom) {
+      params.append("date_from", dateFrom);
+    }
+
+    if (dateTo) {
+      params.append("date_to", dateTo);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/news/search?${params}`, {
       ...defaultOptions,
-      method: "POST",
-      body: JSON.stringify({ query: params.url }),
+      method: "GET",
     });
 
     if (!response.ok) {
@@ -183,9 +326,11 @@ const apiService = {
   },
 
   /**
-   * 주식 캘린더 이벤트 조회 API 호출
+   * 주식 캘린더 이벤트 조회 (기존 유지)
    */
-  async getStockCalendarEvents(params: StockCalendarRequest): Promise<StockCalendarResponse> {
+  async getStockCalendarEvents(
+    params: StockCalendarRequest
+  ): Promise<StockCalendarResponse> {
     const queryParams = new URLSearchParams({
       start_date: params.startDate,
       end_date: params.endDate,
@@ -201,10 +346,13 @@ const apiService = {
       });
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/stock-calendar/events?${queryParams}`, {
-      ...defaultOptions,
-      method: "GET",
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/api/stock-calendar/events?${queryParams}`,
+      {
+        ...defaultOptions,
+        method: "GET",
+      }
+    );
 
     if (!response.ok) {
       throw new Error(`API 오류: ${response.status} - ${response.statusText}`);
@@ -214,5 +362,16 @@ const apiService = {
   },
 };
 
-export default apiService;
-export const getStockCalendarEvents = apiService.getStockCalendarEvents;
+export default newsApiService;
+
+// 개별 함수들도 export
+export const {
+  getLatestNews,
+  getCompanyNews,
+  getKeywordNews,
+  getNewsDetail,
+  generateAISummary,
+  getWatchlistSuggestions,
+  searchNews,
+  getStockCalendarEvents,
+} = newsApiService;

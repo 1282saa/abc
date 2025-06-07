@@ -1,33 +1,26 @@
 import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { containerVariants, itemVariants } from "../animations/pageAnimations";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import ErrorMessage from "../components/common/ErrorMessage";
+import {
+  getLatestNews,
+  type LatestNewsResponse,
+  type IssueTopic,
+  type PopularKeyword,
+} from "../services/api";
 
 interface NewsItem {
-  id: string;
+  id?: string;
   title: string;
   summary?: string;
-  provider?: string;
-  date?: string;
-  category?: string;
-  url?: string;
-}
-
-interface IssueItem {
-  topic_id: string;
-  topic_name: string;
-  rank: number;
-  score: number;
-  news_cluster: string[];
-}
-
-interface KeywordItem {
-  keyword: string;
+  content?: string;
+  provider: string;
+  date: string;
   category: string;
-  score: number;
-  rank?: number;
+  url?: string;
+  published_at?: string;
 }
 
 interface TabProps {
@@ -49,74 +42,258 @@ const Tab: React.FC<TabProps> = ({ label, isActive, onClick }) => (
   </button>
 );
 
-const NewsCard: React.FC<{ item: NewsItem }> = ({ item }) => (
-  <motion.div
-    variants={itemVariants}
-    whileHover={{ scale: 1.02 }}
-    className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-all cursor-pointer"
-  >
-    <div className="flex items-start justify-between mb-3">
-      <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">
-        {item.provider}
-      </span>
-      <span className="text-xs text-gray-500 dark:text-gray-400">
-        {item.date}
-      </span>
-    </div>
-    
-    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 line-clamp-2">
-      {item.title}
-    </h3>
-    
-    {item.summary && (
-      <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
-        {item.summary}
-      </p>
-    )}
-    
-    <div className="flex items-center justify-between">
-      <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-        {item.category}
-      </span>
-      <Link
-        to={item.url || "#"}
-        className="text-primary-600 dark:text-primary-400 text-sm hover:underline"
+const NewsDetailModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  article: NewsItem | null;
+}> = ({ isOpen, onClose, article }) => {
+  const [content, setContent] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && article && article.id && !content) {
+      setIsLoading(true);
+      fetch(`/api/news/detail/${article.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.news && data.news.content) {
+            setContent(data.news.content);
+          }
+        })
+        .catch((err) => {
+          console.error("뉴스 본문 조회 실패:", err);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+  }, [isOpen, article, content]);
+
+  if (!isOpen || !article) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+        onClick={onClose}
       >
-        자세히 보기 →
-      </Link>
-    </div>
-  </motion.div>
-);
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">{article.title}</h2>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
 
-const IssueCard: React.FC<{ item: IssueItem }> = ({ item }) => (
-  <motion.div
-    variants={itemVariants}
-    className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer"
-    whileHover={{ scale: 1.02 }}
-  >
-    <div className="flex items-center justify-between mb-4">
-      <span className="text-2xl font-bold text-primary-600 dark:text-primary-400">
-        #{item.rank}
-      </span>
-      <span className="px-3 py-1 rounded-full text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-        점수: {item.score}
-      </span>
-    </div>
-    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-      {item.topic_name}
-    </h3>
-    <div className="flex items-center justify-between">
-      <p className="text-gray-600 dark:text-gray-400 text-sm">
-        관련 뉴스: <span className="font-semibold">{item.news_cluster.length}개</span>
-      </p>
-      <span className="text-xs text-gray-500 dark:text-gray-400">
-        ID: {item.topic_id}
-      </span>
-    </div>
-  </motion.div>
-);
+          <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{article.provider}</span>
+            </div>
+            <span>
+              {article.published_at || article.date || "날짜 정보 없음"}
+            </span>
+          </div>
 
-const KeywordTag: React.FC<{ item: KeywordItem }> = ({ item }) => (
+          {isLoading ? (
+            <div className="text-center py-8">
+              <LoadingSpinner />
+              <p className="mt-4 text-gray-600">본문을 불러오는 중입니다...</p>
+            </div>
+          ) : content ? (
+            <div className="prose dark:prose-invert max-w-none">
+              <div className="whitespace-pre-line">{content}</div>
+            </div>
+          ) : article.summary ? (
+            <div className="prose dark:prose-invert max-w-none">
+              <div className="whitespace-pre-line">{article.summary}</div>
+              <p className="text-gray-500 mt-4 italic">
+                전체 본문을 불러올 수 없습니다.
+              </p>
+            </div>
+          ) : (
+            <p className="text-gray-500 italic">본문 내용이 없습니다.</p>
+          )}
+
+          {article.url && (
+            <div className="mt-6 text-right">
+              <a
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                원문 보기
+                <svg
+                  className="w-4 h-4 ml-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                  />
+                </svg>
+              </a>
+            </div>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
+
+const NewsCard: React.FC<{ item: NewsItem }> = ({ item }) => {
+  const [showDetailModal, setShowDetailModal] = useState(false);
+
+  return (
+    <>
+      <motion.div
+        variants={itemVariants}
+        whileHover={{ scale: 1.02 }}
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-all cursor-pointer"
+        onClick={() => setShowDetailModal(true)}
+      >
+        <div className="flex items-start justify-between mb-3">
+          <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">
+            {item.provider}
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {item.date}
+          </span>
+        </div>
+
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 line-clamp-2">
+          {item.title}
+        </h3>
+
+        {item.summary && (
+          <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
+            {item.summary}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+            {item.category}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDetailModal(true);
+            }}
+            className="text-primary-600 dark:text-primary-400 text-sm hover:underline"
+          >
+            본문 보기 →
+          </button>
+        </div>
+      </motion.div>
+
+      <NewsDetailModal
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        article={item}
+      />
+    </>
+  );
+};
+
+const IssueCard: React.FC<{ item: IssueTopic }> = ({ item }) => {
+  const [showDetails, setShowDetails] = useState(false);
+
+  return (
+    <motion.div
+      variants={itemVariants}
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer"
+      whileHover={{ scale: 1.02 }}
+      onClick={() => setShowDetails(!showDetails)}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-2xl font-bold text-primary-600 dark:text-primary-400">
+          #{item.rank}
+        </span>
+        <span className="px-3 py-1 rounded-full text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+          뉴스: {item.count}개
+        </span>
+      </div>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+        {item.title || item.topic_name}
+      </h3>
+
+      {/* 기본 정보 */}
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-gray-600 dark:text-gray-400 text-sm">
+          관련 뉴스:{" "}
+          <span className="font-semibold text-primary-600 dark:text-primary-400">
+            {item.count}개
+          </span>
+        </p>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {showDetails ? "▲ 접기" : "▼ 언론사별 보기"}
+        </span>
+      </div>
+
+      {/* 언론사별 breakdown (토글) */}
+      {showDetails &&
+        item.provider_breakdown &&
+        item.provider_breakdown.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700"
+          >
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+              📰 언론사별 기사 수
+            </h4>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {item.provider_breakdown.map((provider, index) => (
+                <div
+                  key={provider.provider_code}
+                  className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded"
+                >
+                  <span className="font-medium text-gray-700 dark:text-gray-300">
+                    {provider.provider}
+                  </span>
+                  <span className="text-primary-600 dark:text-primary-400 font-bold">
+                    {provider.count}건
+                  </span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+    </motion.div>
+  );
+};
+
+const KeywordTag: React.FC<{ item: PopularKeyword }> = ({ item }) => (
   <motion.span
     variants={itemVariants}
     whileHover={{ scale: 1.05 }}
@@ -124,11 +301,16 @@ const KeywordTag: React.FC<{ item: KeywordItem }> = ({ item }) => (
   >
     <div>
       <div className="font-semibold">{item.keyword}</div>
-      {item.rank && (
-        <div className="text-xs opacity-70">#{item.rank}</div>
+      <div className="text-xs opacity-70">#{item.rank}</div>
+    </div>
+    <div className="ml-2 text-right">
+      <div className="text-xs opacity-70">{item.count}회</div>
+      {item.trend && (
+        <div className="text-xs">
+          {item.trend === "up" ? "↑" : item.trend === "down" ? "↓" : "→"}
+        </div>
       )}
     </div>
-    <span className="ml-2 text-xs opacity-70">{item.category}</span>
   </motion.span>
 );
 
@@ -139,12 +321,10 @@ const HomePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"issues" | "keywords">("issues");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [latestNews, setLatestNews] = useState<{
-    today_issues: IssueItem[];
-    popular_keywords: KeywordItem[];
-  }>({
+  const [latestNews, setLatestNews] = useState<LatestNewsResponse>({
     today_issues: [],
-    popular_keywords: []
+    popular_keywords: [],
+    timestamp: "",
   });
 
   useEffect(() => {
@@ -154,65 +334,58 @@ const HomePage: React.FC = () => {
   const fetchLatestNews = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      const response = await fetch("/api/news/latest");
-      if (!response.ok) {
-        throw new Error("최신 뉴스를 불러오는데 실패했습니다");
-      }
-      
-      const data = await response.json();
+      const data = await getLatestNews();
       setLatestNews(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다");
+      setError(
+        err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다"
+      );
       // 개발 중 더미 데이터 사용 (이슈 랭킹 구조)
       setLatestNews({
         today_issues: [
           {
-            topic_id: "issue_001",
-            topic_name: "반도체 수출 증가",
             rank: 1,
-            score: 95.2,
-            news_cluster: ["cluster_001", "cluster_002"]
+            title: "반도체 수출 증가",
+            count: 42,
+            related_news: ["cluster_001", "cluster_002"],
           },
           {
-            topic_id: "issue_002", 
-            topic_name: "AI 스타트업 투자",
             rank: 2,
-            score: 89.7,
-            news_cluster: ["cluster_003", "cluster_004"]
+            title: "AI 스타트업 투자",
+            count: 38,
+            related_news: ["cluster_003", "cluster_004"],
           },
           {
-            topic_id: "issue_003",
-            topic_name: "디지털 금융 혁신",
             rank: 3,
-            score: 82.5,
-            news_cluster: ["cluster_005"]
+            title: "디지털 금융 혁신",
+            count: 25,
+            related_news: ["cluster_005"],
           },
           {
-            topic_id: "issue_004",
-            topic_name: "카보네이트리티 정책",
             rank: 4,
-            score: 78.9,
-            news_cluster: ["cluster_006"]
+            title: "탄소중립 정책",
+            count: 20,
+            related_news: ["cluster_006"],
           },
           {
-            topic_id: "issue_005",
-            topic_name: "K-콘텐츠 해외진출",
             rank: 5,
-            score: 75.3,
-            news_cluster: ["cluster_007"]
-          }
+            title: "K-콘텐츠 해외진출",
+            count: 18,
+            related_news: ["cluster_007"],
+          },
         ],
         popular_keywords: [
-          { keyword: "생성 AI", rank: 1, category: "기술", score: 95 },
-          { keyword: "ESG 경영", rank: 2, category: "경영", score: 92 },
-          { keyword: "메타버스", rank: 3, category: "기술", score: 88 },
-          { keyword: "탄소중립", rank: 4, category: "환경", score: 85 },
-          { keyword: "디지털전환", rank: 5, category: "산업", score: 82 },
-          { keyword: "비대면 금융", rank: 6, category: "금융", score: 79 },
-          { keyword: "자동차 전동화", rank: 7, category: "자동차", score: 76 }
-        ]
+          { rank: 1, keyword: "생성 AI", count: 1250, trend: "up" },
+          { rank: 2, keyword: "ESG 경영", count: 980, trend: "up" },
+          { rank: 3, keyword: "메타버스", count: 850, trend: "stable" },
+          { rank: 4, keyword: "탄소중립", count: 720, trend: "up" },
+          { rank: 5, keyword: "디지털전환", count: 680, trend: "stable" },
+          { rank: 6, keyword: "비대면 금융", count: 550, trend: "down" },
+          { rank: 7, keyword: "자동차 전동화", count: 480, trend: "up" },
+        ],
+        timestamp: new Date().toISOString(),
       });
     } finally {
       setIsLoading(false);
@@ -340,8 +513,18 @@ const HomePage: React.FC = () => {
           className="inline-flex items-center bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
         >
           관심 종목 추가하기
-          <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          <svg
+            className="w-5 h-5 ml-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 5l7 7-7 7"
+            />
           </svg>
         </Link>
       </motion.div>

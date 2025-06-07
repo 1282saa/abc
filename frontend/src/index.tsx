@@ -3,7 +3,6 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter as Router } from "react-router-dom";
 import App from "./App";
 import "./styles/index.css";
-import reportWebVitals from "./reportWebVitals";
 
 // React 앱의 루트 요소 생성
 const root = ReactDOM.createRoot(
@@ -18,6 +17,3 @@ root.render(
     </Router>
   </React.StrictMode>
 );
-
-// 웹 성능 측정 (옵션)
-reportWebVitals();
