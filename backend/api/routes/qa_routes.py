@@ -5,6 +5,7 @@
 """
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, validator
 from typing import Dict, List, Any, Optional, Union
@@ -75,6 +76,9 @@ class QueryRequest(BaseModel):
 
 # API 라우터 생성
 router = APIRouter(prefix="/api/qa", tags=["질의응답"])
+
+# 추가 라우터 생성 (프론트엔드 호환용)
+main_router = APIRouter(prefix="/api", tags=["API"])
 
 # QA 엔진 인스턴스 (FastAPI Depends로 사용 가능하게)
 def get_qa_engine():
@@ -190,4 +194,109 @@ async def status_endpoint(qa_engine: QAEngine = Depends(get_qa_engine)):
     except Exception as e:
         logger = setup_logger("api.qa.status")
         logger.error(f"상태 조회 오류: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"상태 조회 중 오류 발생: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"상태 조회 중 오류 발생: {str(e)}")
+
+# 프론트엔드 호환을 위한 추가 라우트
+@main_router.post("/summary")
+async def summary_api(
+    request: QueryRequest,
+    qa_engine: QAEngine = Depends(get_qa_engine)
+):
+    """프론트엔드 호환용 요약 API 엔드포인트
+    
+    /api/qa/summarize 기능을 재사용합니다.
+    """
+    logger = setup_logger("api.summary")
+    logger.info(f"요약 요청 받음 (프론트엔드 호환): '{request.query}'")
+    
+    try:
+        result = await qa_engine.generate_summary(
+            query=request.query,
+            search_params=request.search_params.dict(exclude_none=True)
+        )
+        
+        return result
+            
+    except Exception as e:
+        logger.error(f"요약 생성 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"요약 생성 중 오류 발생: {str(e)}")
+
+@main_router.post("/timeline")
+async def timeline_api(
+    request: QueryRequest,
+    qa_engine: QAEngine = Depends(get_qa_engine)
+):
+    """프론트엔드 호환용 타임라인 API 엔드포인트
+    
+    /api/qa/timeline 기능을 재사용합니다.
+    """
+    logger = setup_logger("api.timeline")
+    logger.info(f"타임라인 요청 받음 (프론트엔드 호환): '{request.query}'")
+    
+    try:
+        result = await qa_engine.generate_timeline(
+            query=request.query,
+            search_params=request.search_params.dict(exclude_none=True)
+        )
+        
+        return result
+            
+    except Exception as e:
+        logger.error(f"타임라인 생성 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"타임라인 생성 중 오류 발생: {str(e)}")
+
+# QA 라우트도 /api/qa 경로로 추가
+@main_router.post("/qa")
+async def qa_api(
+    request: QueryRequest,
+    qa_engine: QAEngine = Depends(get_qa_engine)
+):
+    """프론트엔드 호환용 QA API 엔드포인트
+    
+    /api/qa/query 기능을 재사용합니다.
+    """
+    logger = setup_logger("api.qa")
+    logger.info(f"QA 요청 받음 (프론트엔드 호환): '{request.query}'")
+    
+    try:
+        result = await qa_engine.process_query(
+            query=request.query,
+            stream=False,
+            search_params=request.search_params.dict(exclude_none=True)
+        )
+        
+        return result
+            
+    except Exception as e:
+        logger.error(f"QA 처리 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"QA 처리 중 오류 발생: {str(e)}")
+
+@main_router.get("/qa/stream")
+async def qa_stream_api(
+    request: QueryRequest,
+    qa_engine: QAEngine = Depends(get_qa_engine)
+):
+    """프론트엔드 호환용 스트리밍 QA API 엔드포인트
+    
+    /api/qa/query 스트리밍 기능을 재사용합니다.
+    """
+    logger = setup_logger("api.qa.stream")
+    logger.info(f"스트리밍 QA 요청 받음 (프론트엔드 호환): '{request.query}'")
+    
+    try:
+        async def stream_response():
+            async for chunk in qa_engine.process_query(
+                query=request.query,
+                stream=True,
+                search_params=request.search_params.dict(exclude_none=True)
+            ):
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+        
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/event-stream"
+        )
+            
+    except Exception as e:
+        logger.error(f"스트리밍 QA 처리 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"스트리밍 QA 처리 중 오류 발생: {str(e)}") 

@@ -7,4 +7,8 @@
 # 서브패키지 가져오기
 from backend.services import qa
 from backend.services import news
-from backend.services import content 
+from backend.services import content
+
+# API 클라이언트들
+from backend.services.dart_api_client import dart_api_client
+from backend.services.kis_api_client import kis_api_client 

@@ -2,29 +2,30 @@
   "name": "ainova-qa-frontend",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "dependencies": {
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
     "@headlessui/react": "^1.7.15",
     "@heroicons/react": "^2.0.18",
-    "axios": "^1.4.0",
+    "axios": "^1.9.0",
     "framer-motion": "^10.12.16",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-markdown": "^8.0.7",
     "react-query": "^3.39.3",
-    "react-router-dom": "^6.11.2",
-    "react-scripts": "5.0.1",
-    "tailwindcss": "^3.3.2",
-    "typescript": "^5.0.4",
+    "react-router-dom": "^6.30.1",
+    "typescript": "^5.8.3",
     "web-vitals": "^3.3.2",
     "zustand": "^4.3.8"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "dev": "vite",
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "jest",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "eslintConfig": {
     "extends": [
@@ -50,11 +51,24 @@
     "@testing-library/user-event": "^14.4.3",
     "@types/jest": "^29.5.2",
     "@types/node": "^20.2.5",
-    "@types/react": "^18.2.9",
-    "@types/react-dom": "^18.2.4",
-    "autoprefixer": "^10.4.14",
-    "postcss": "^8.4.24",
-    "postcss-import": "^15.1.0"
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^8.45.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.3",
+    "jest": "^29.0.0",
+    "postcss": "^8.5.4",
+    "postcss-import": "^15.1.0",
+    "tailwindcss": "^3.3.5",
+    "vite": "^6.3.5"
   },
-  "proxy": "http://localhost:8000"
+  "description": "AI NOVA는 빅카인즈(BIGKinds) 뉴스 데이터를 활용한 질의응답, 요약, 타임라인 생성 기능을 제공하는 웹 애플리케이션입니다.",
+  "main": "postcss.config.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }

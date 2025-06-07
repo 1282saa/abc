@@ -2,8 +2,9 @@
  * API 서비스 모듈
  */
 
-// API 기본 URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+// Vite 환경 변수는 import.meta.env 를 통해 접근합니다.
+// .env 파일에서는 VITE_API_URL 로 정의해 주세요.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 // 요청 옵션
 const defaultOptions: RequestInit = {
@@ -58,16 +59,49 @@ export interface SummaryResponse {
   keywords: string[];
 }
 
+// 주식 캘린더 요청 인터페이스
+export interface StockCalendarRequest {
+  startDate: string;
+  endDate: string;
+  marketType?: string;
+  eventTypes?: string[];
+}
+
+// 주식 캘린더 응답 인터페이스
+export interface StockCalendarResponse {
+  events: Array<{
+    id: string;
+    title: string;
+    date: string;
+    eventType: "earnings" | "dividend" | "holiday" | "ipo" | "economic" | "split";
+    stockCode?: string;
+    stockName?: string;
+    description?: string;
+    marketType?: "domestic" | "us" | "global";
+  }>;
+}
+
 // API 서비스 객체
 const apiService = {
   /**
    * 타임라인 API 호출
    */
   async getTimeline(params: TimelineRequest): Promise<TimelineResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/timeline`, {
+    // 백엔드 QueryRequest { query, search_params } 구조에 맞춰 변환
+    const backendBody: any = {
+      query: params.keywords,
+    };
+
+    if (params.date_from && params.date_to) {
+      backendBody.search_params = {
+        date_range: [params.date_from, params.date_to],
+      };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/qa/timeline`, {
       ...defaultOptions,
       method: "POST",
-      body: JSON.stringify(params),
+      body: JSON.stringify(backendBody),
     });
 
     if (!response.ok) {
@@ -81,10 +115,10 @@ const apiService = {
    * QA API 호출
    */
   async getAnswer(params: QARequest): Promise<QAResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/qa`, {
+    const response = await fetch(`${API_BASE_URL}/api/qa/query`, {
       ...defaultOptions,
       method: "POST",
-      body: JSON.stringify(params),
+      body: JSON.stringify({ query: params.query, stream: false }),
     });
 
     if (!response.ok) {
@@ -104,9 +138,9 @@ const apiService = {
     onError: (error: Error) => void
   ): () => void {
     const eventSource = new EventSource(
-      `${API_BASE_URL}/api/qa/stream?query=${encodeURIComponent(
+      `${API_BASE_URL}/api/qa/query?stream=true&query=${encodeURIComponent(
         params.query
-      )}&use_sources=${params.use_sources || false}`
+      )}`
     );
 
     eventSource.onmessage = (event) => {
@@ -134,10 +168,11 @@ const apiService = {
    * 요약 API 호출
    */
   async getSummary(params: SummaryRequest): Promise<SummaryResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/summary`, {
+    // 백엔드 QueryRequest 구조에 맞춰 변환
+    const response = await fetch(`${API_BASE_URL}/api/qa/summarize`, {
       ...defaultOptions,
       method: "POST",
-      body: JSON.stringify(params),
+      body: JSON.stringify({ query: params.url }),
     });
 
     if (!response.ok) {
@@ -146,6 +181,38 @@ const apiService = {
 
     return response.json();
   },
+
+  /**
+   * 주식 캘린더 이벤트 조회 API 호출
+   */
+  async getStockCalendarEvents(params: StockCalendarRequest): Promise<StockCalendarResponse> {
+    const queryParams = new URLSearchParams({
+      start_date: params.startDate,
+      end_date: params.endDate,
+    });
+
+    if (params.marketType && params.marketType !== "all") {
+      queryParams.append("market_type", params.marketType);
+    }
+
+    if (params.eventTypes && params.eventTypes.length > 0) {
+      params.eventTypes.forEach((type) => {
+        queryParams.append("event_types", type);
+      });
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/stock-calendar/events?${queryParams}`, {
+      ...defaultOptions,
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status} - ${response.statusText}`);
+    }
+
+    return response.json();
+  },
 };
 
 export default apiService;
+export const getStockCalendarEvents = apiService.getStockCalendarEvents;

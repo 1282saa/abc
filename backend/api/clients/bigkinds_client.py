@@ -27,18 +27,18 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from backend.utils.logger import setup_logger
 
 # API 엔드포인트 및 기본 URL 설정
-API_BASE_URL = "https://tools.kinds.or.kr/api/"
+API_BASE_URL = "https://tools.kinds.or.kr/"
 API_ENDPOINTS = {
-    "news_search": "news/search",
-    "issue_ranking": "issue/ranking",
-    "word_cloud": "word/cloud",
-    "time_line": "time/line",
-    "quotation_search": "quotation/search",
-    "today_category_keyword": "today/category/keyword",
+    "news_search": "search/news",
+    "issue_ranking": "issue_ranking",
+    "word_cloud": "word_cloud",
+    "time_line": "time_line",
+    "quotation_search": "search/quotation",
+    "today_category_keyword": "today_category_keyword",
     "feature": "feature",
     "keyword": "keyword",
     "topn_keyword": "topn/keyword",
-    "query_rank": "query/rank"
+    "query_rank": "query_rank"
 }
 
 # 성능 관련 설정
@@ -50,7 +50,7 @@ PERFORMANCE = {
 }
 
 # 환경 변수에서 API 키 로드
-API_KEY = os.environ.get("BIGKINDS_API_KEY", "")
+API_KEY = os.environ.get("BIGKINDS_KEY", "")
 
 # 서울경제신문 언론사 코드
 SEOUL_ECONOMIC_DAILY_CODE = "02100311"
@@ -67,7 +67,7 @@ class BigKindsClient:
         """
         self.api_key = api_key or API_KEY
         if not self.api_key:
-            raise ValueError("API 키가 필요합니다. 환경변수 BIGKINDS_API_KEY를 설정하거나 초기화 시 제공하세요.")
+            raise ValueError("API 키가 필요합니다. 환경변수 BIGKINDS_KEY를 설정하거나 초기화 시 제공하세요.")
         
         self.base_url = base_url or API_BASE_URL
         self.logger = setup_logger("api.bigkinds")
@@ -156,13 +156,16 @@ class BigKindsClient:
             "Accept": "application/json",
         }
         
-        # API 키 추가
-        params["access_key"] = self.api_key
+        # 빅카인즈 API 요청 구조에 맞게 재구성
+        request_body = {
+            "access_key": self.api_key,
+            **params  # argument 래퍼 제거하고 최상위 레벨에 파라미터 추가
+        }
         
         for attempt in range(retry_count):
             try:
                 self.logger.debug(f"API 요청 (시도 {attempt + 1}/{retry_count}): {url}")
-                response = requests.post(url, json=params, headers=headers, timeout=self.timeout)
+                response = requests.post(url, json=request_body, headers=headers, timeout=self.timeout)
                 
                 # 429 (Rate Limit) 처리
                 if response.status_code == 429:
@@ -215,10 +218,17 @@ class BigKindsClient:
                 "from": start_date,
                 "until": end_date
             },
-            "sort": {"date": "desc" if sort == "date" else "asc"},
             "return_from": (page - 1) * size,
             "return_size": size
         }
+        
+        # 정렬 설정 개선
+        if sort == "date":
+            params["sort"] = {"date": "desc"}
+        elif sort == "rank":
+            params["sort"] = {"_score": "desc"}  # 정확도 순 정렬로 변경
+        else:
+            params["sort"] = {"date": "desc"}  # 기본값
         
         if provider:
             params["provider"] = provider
@@ -294,7 +304,12 @@ class BigKindsClient:
         
         # 정렬 설정
         if isinstance(sort, str):
-            params["sort"] = {"date": "desc" if sort == "date" else "asc"}
+            if sort == "date":
+                params["sort"] = {"date": "desc"}
+            elif sort == "rank":
+                params["sort"] = {"_score": "desc"}  # 정확도 순 정렬로 변경
+            else:
+                params["sort"] = sort
         else:
             params["sort"] = sort
         
@@ -580,7 +595,7 @@ class BigKindsClient:
         params = {
             "from": start_date,
             "until": end_date,
-            "offset": size
+            "size": size
         }
         
         return self._make_request(API_ENDPOINTS["query_rank"], params)

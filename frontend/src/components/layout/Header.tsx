@@ -55,6 +55,12 @@ const Header: React.FC<HeaderProps> = ({ theme, toggleTheme }) => {
             >
               뉴스 타임라인
             </Link>
+            <Link
+              to="/stock-calendar"
+              className={`${isActive("/stock-calendar")} transition-colors`}
+            >
+              주식 캘린더
+            </Link>
           </nav>
 
           {/* 다크모드 토글 버튼 */}

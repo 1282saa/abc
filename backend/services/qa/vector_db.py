@@ -13,6 +13,8 @@ from chromadb.utils import embedding_functions
 import uuid
 import json
 from pathlib import Path
+import importlib.util
+import warnings
 
 # 프로젝트 루트 디렉토리 찾기
 import sys
@@ -52,10 +54,32 @@ class VectorDB:
         )
         
         # 임베딩 함수 설정 (기본 OpenAI)
-        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.environ.get("OPENAI_API_KEY"),
-            model_name="text-embedding-ada-002"
-        )
+        try:
+            openai_api_key = os.environ.get("OPENAI_API_KEY")
+            if not openai_api_key:
+                raise ValueError("OpenAI API 키가 설정되지 않았습니다.")
+                
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=openai_api_key,
+                model_name="text-embedding-ada-002"
+            )
+            self.logger.info("OpenAI 임베딩 함수 사용")
+            
+        except Exception as e:
+            # OpenAI API 키가 없는 경우 sentence-transformers 사용
+            self.logger.warning(f"OpenAI 임베딩 초기화 실패, 대체 임베딩 사용: {e}")
+            
+            # sentence-transformers 패키지 확인 및 설치
+            if not importlib.util.find_spec("sentence_transformers"):
+                warnings.warn("sentence-transformers 패키지를 설치해주세요: pip install sentence-transformers")
+                self.logger.warning("sentence-transformers 패키지가 필요합니다.")
+                # 임시 대체 함수 (임베딩 없이 텍스트 유사도 사용)
+                self.embedding_function = None
+            else:
+                # 무료 경량 임베딩 모델 사용
+                self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                    model_name="all-MiniLM-L6-v2"
+                )
         
         # 컬렉션 가져오기 또는 생성
         try:

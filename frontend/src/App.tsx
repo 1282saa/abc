@@ -7,6 +7,7 @@ import HomePage from "./pages/HomePage";
 import QAPage from "./pages/QAPage";
 import SummaryPage from "./pages/SummaryPage";
 import TimelinePage from "./pages/TimelinePage";
+import StockCalendarPage from "./pages/StockCalendarPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 // 다크모드 설정
@@ -42,17 +43,16 @@ const App: React.FC = () => {
   }, [theme]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
-      <Layout theme={theme} toggleTheme={toggleTheme}>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/qa" element={<QAPage />} />
-          <Route path="/summary" element={<SummaryPage />} />
-          <Route path="/timeline" element={<TimelinePage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Layout>
-    </div>
+    <Layout theme={theme} toggleTheme={toggleTheme}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/qa" element={<QAPage />} />
+        <Route path="/summary" element={<SummaryPage />} />
+        <Route path="/timeline" element={<TimelinePage />} />
+        <Route path="/stock-calendar" element={<StockCalendarPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </Layout>
   );
 };
 

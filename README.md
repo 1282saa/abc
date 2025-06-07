@@ -208,3 +208,48 @@ Copyright © 2025 서울경제신문. All rights reserved.
 ## 연락처
 
 서울경제신문 디지털혁신팀 (digital@sedaily.com)
+
+## API 키 설정 가이드
+
+본 서비스는 다음 API 키들이 필요합니다:
+
+1. **빅카인즈 API 키 (필수)**
+
+   - BigKinds API(뉴스 데이터베이스)를 사용하기 위한 API 키
+   - 환경 변수: `BIGKINDS_API_KEY`
+
+2. **OpenAI API 키 (선택)**
+   - 임베딩 생성과 벡터 DB 검색 기능 사용 시 필요
+   - 환경 변수: `OPENAI_API_KEY`
+
+### 환경 변수 설정 방법
+
+1. 프로젝트 루트 디렉토리에 `.env` 파일 생성:
+
+   ```
+   BIGKINDS_API_KEY=your_bigkinds_api_key
+   OPENAI_API_KEY=your_openai_api_key
+   ```
+
+2. 또는 터미널에서 직접 설정 (임시):
+
+   ```bash
+   # macOS/Linux
+   export BIGKINDS_API_KEY=your_bigkinds_api_key
+   export OPENAI_API_KEY=your_openai_api_key
+
+   # Windows
+   set BIGKINDS_API_KEY=your_bigkinds_api_key
+   set OPENAI_API_KEY=your_openai_api_key
+   ```
+
+### 참고사항
+
+- OpenAI API 키가 없는 경우, 대체 오픈소스 임베딩 모델(all-MiniLM-L6-v2)이 자동으로 사용됩니다.
+- BigKinds API 키는 반드시 필요하며, 없을 경우 개발 모드로 작동합니다.
+- 환경 변수 설정 후 서버를 재시작해야 변경사항이 적용됩니다.
+
+### API 키 발급 방법
+
+- **빅카인즈 API 키**: [빅카인즈 웹사이트](https://www.bigkinds.or.kr/)에서 회원가입 후 신청
+- **OpenAI API 키**: [OpenAI 플랫폼](https://platform.openai.com/)에서 계정 생성 후 발급

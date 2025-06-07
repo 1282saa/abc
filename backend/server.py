@@ -10,13 +10,19 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from dotenv import load_dotenv
 
 # 프로젝트 루트 디렉토리 찾기
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# 환경변수 로드 (프로젝트 루트의 .env 파일)
+load_dotenv(PROJECT_ROOT / ".env")
+
 from backend.utils.logger import setup_logger
 from backend.api.routes.qa_routes import router as qa_router
+from backend.api.routes.qa_routes import main_router
+from backend.api.routes.stock_calendar_routes import router as stock_calendar_router
 
 # 로거 설정
 logger = setup_logger("server")
@@ -41,6 +47,8 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(qa_router)
+app.include_router(main_router)
+app.include_router(stock_calendar_router)
 
 @app.get("/api/health")
 async def health_check():
