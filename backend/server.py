@@ -20,9 +20,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
 from backend.utils.logger import setup_logger
-from backend.api.routes.qa_routes import router as qa_router
-from backend.api.routes.qa_routes import main_router
 from backend.api.routes.stock_calendar_routes import router as stock_calendar_router
+from backend.api.routes.news_routes import router as news_router
 
 # 로거 설정
 logger = setup_logger("server")
@@ -46,9 +45,8 @@ app.add_middleware(
 )
 
 # 라우터 등록
-app.include_router(qa_router)
-app.include_router(main_router)
 app.include_router(stock_calendar_router)
+app.include_router(news_router)
 
 @app.get("/api/health")
 async def health_check():

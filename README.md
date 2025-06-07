@@ -1,255 +1,370 @@
-# AI NOVA - 빅카인즈 기반 뉴스 질의응답 시스템
+# AI NOVA - 스마트 뉴스 분석 플랫폼
 
-## 프로젝트 개요
+AI NOVA는 빅카인즈(BigKinds) API를 기반으로 하는 차세대 뉴스 분석 플랫폼입니다. 서울경제신문을 위해 개발된 이 시스템은 관심 기업의 뉴스를 실시간으로 추적하고, GPT-4 Turbo를 활용한 AI 요약 기능을 제공합니다.
 
-AI NOVA는 빅카인즈 API를 기반으로 하는 고급 뉴스 분석 및 질의응답 시스템입니다. 사용자가 자연어로 질문을 하면 관련 뉴스 기사를 검색하고 분석하여 정확하고 종합적인 답변을 제공합니다. 이 시스템은 이슈 중심의 뉴스 클러스터링, 요약 및 인사이트 생성 기능을 통해 방대한 뉴스 데이터를 효과적으로 활용할 수 있게 합니다.
+## 🚀 주요 기능
 
-## 핵심 기능
+### 📊 홈페이지 - 최신 뉴스 대시보드
+- **오늘의 이슈**: 빅카인즈 이슈 랭킹을 통한 실시간 주요 이슈 분석
+- **인기 키워드**: 카테고리별 핫 키워드 모니터링 및 트렌드 분석
 
-- **뉴스 기반 질의응답**: 자연어 질문에 대해 관련 뉴스 기사를 분석하여 답변 제공
-- **뉴스 요약**: 특정 주제나 키워드에 관한 뉴스 기사들을 종합적으로 요약
-- **타임라인 생성**: 이슈의 시간적 흐름과 발전 과정을 시각화
-- **이슈 분석**: 주요 이슈의 맥락과 관련성을 파악하여 인사이트 제공
-- **실시간 데이터 처리**: 빅카인즈 API를 통한 최신 뉴스 데이터 수집 및 분석
+### 📈 관심 종목 - 기업 뉴스 추적
+- **기업별 뉴스 타임라인**: 날짜별 뉴스 정렬 및 시각화
+- **뉴스 캐러셀**: 주요 기사 요약 슬라이드
+- **AI 요약 기능**: 
+  - 🎯 **이슈 중심 요약**: 핵심 이슈와 동향 분석
+  - 💬 **인용 중심 요약**: 주요 인물 발언 및 의견 정리
+  - 📊 **수치 중심 요약**: 중요 통계 및 데이터 분석
 
-## 기술 스택
+### 📅 투자 캘린더 - 경제 일정 관리
+- 주요 경제 이벤트 및 공시 일정 통합 관리
+- DART API 연동을 통한 기업 공시 정보
 
-### 백엔드
+## 🏗️ 시스템 아키텍처
 
-- **Python 3.8+**: 핵심 로직 구현
-- **FastAPI**: 고성능 REST API 서버
-- **ChromaDB**: 벡터 데이터베이스 (뉴스 임베딩 저장)
-- **OpenAI**: 텍스트 임베딩 및 LLM 기반 응답 생성
-- **HuggingFace Transformers**: 오픈소스 임베딩 및 LLM 지원
-
-### 프론트엔드
-
-- **React**: 사용자 인터페이스 구현
-- **TypeScript**: 타입 안정성 보장
-- **TailwindCSS**: 모던 UI 스타일링
-- **Vite**: 빠른 개발 경험 제공
-
-## 프로젝트 구조
-
+### 백엔드 (Python/FastAPI)
 ```
-/
-├── backend/                  # 백엔드 코드
-│   ├── api/                  # API 관련 코드
-│   │   ├── clients/          # 외부 API 클라이언트
-│   │   │   └── bigkinds_client.py  # 빅카인즈 API 클라이언트
-│   │   └── routes/           # API 라우트 정의
-│   │       └── qa_routes.py  # 질의응답 API 엔드포인트
-│   ├── services/             # 핵심 서비스 모듈
-│   │   ├── qa/               # 질의응답 시스템
-│   │   │   ├── vector_db.py  # 벡터 데이터베이스 관리
-│   │   │   ├── embeddings.py # 텍스트 임베딩 처리
-│   │   │   ├── doc_processor.py # 문서 처리 및 청크 분할
-│   │   │   ├── retriever.py  # 관련 문서 검색
-│   │   │   ├── llm_handler.py # LLM 인터페이스
-│   │   │   ├── prompts.py    # 프롬프트 템플릿
-│   │   │   └── engine.py     # QA 시스템 통합 엔진
-│   │   ├── news/             # 뉴스 분석 모듈
-│   │   │   └── news_engine.py # 뉴스 분석 엔진
-│   │   └── content/          # 콘텐츠 생성 모듈
-│   ├── utils/                # 유틸리티 함수
-│   │   └── logger.py         # 로깅 설정
-│   └── server.py             # 메인 서버 파일
-│
-├── frontend/                 # 프론트엔드 코드
-│   ├── src/                  # 소스 코드
-│   │   ├── components/       # React 컴포넌트
-│   │   ├── pages/            # 페이지 컴포넌트
-│   │   ├── hooks/            # React 커스텀 훅
-│   │   ├── utils/            # 유틸리티 함수
-│   │   ├── services/         # API 통신 로직
-│   │   └── App.tsx           # 메인 앱 컴포넌트
-│   ├── public/               # 정적 파일
-│   ├── package.json          # 패키지 정보
-│   └── tailwind.config.js    # TailwindCSS 설정
-│
-├── config/                   # 설정 파일
-│   ├── settings.py           # 일반 설정
-│   └── .env                  # 환경 변수 (API 키 등)
-│
-├── docs/                     # 문서
-├── output/                   # 출력 파일 저장 디렉토리
-└── cache/                    # 캐시 디렉토리 (벡터 DB 등)
+backend/
+├── api/
+│   ├── clients/           # 외부 API 클라이언트
+│   │   └── bigkinds_client.py  # 빅카인즈 API 통합
+│   └── routes/           # API 엔드포인트
+│       ├── news_routes.py     # 뉴스 관련 API
+│       └── stock_calendar_routes.py  # 투자 캘린더 API
+├── services/             # 비즈니스 로직
+│   ├── dart_api_client.py     # DART 공시 정보
+│   ├── kis_api_client.py      # 한국투자증권 API
+│   ├── exchange_rate_service.py # 환율 정보
+│   └── perplexity_client.py   # AI 분석 보조
+├── utils/               # 유틸리티
+│   └── logger.py            # 로깅 시스템
+└── server.py            # FastAPI 메인 서버
 ```
 
-## 주요 구성 요소 설명
+### 프론트엔드 (React/TypeScript)
+```
+frontend/src/
+├── components/
+│   ├── calendar/         # 캘린더 컴포넌트
+│   ├── common/          # 공통 UI 컴포넌트
+│   └── layout/          # 레이아웃 컴포넌트
+├── hooks/               # React 커스텀 훅
+├── pages/               # 페이지 컴포넌트
+│   ├── HomePage.tsx          # 뉴스 대시보드
+│   ├── WatchlistPage.tsx     # 관심 종목
+│   └── StockCalendarPage.tsx # 투자 캘린더
+├── services/            # API 통신 계층
+└── styles/              # 스타일 정의
+```
 
-### 1. 빅카인즈 클라이언트 (backend/api/clients/bigkinds_client.py)
+## 🛠️ 기술 스택
 
-- 빅카인즈 Open API에 접근하여 뉴스 데이터를 가져옵니다.
-- 논리 연산자 지원, 중복 제거, 필터링 등 고급 검색 기능을 제공합니다.
-- 재시도 로직 및 에러 처리를 통해 안정적인 API 호출을 보장합니다.
+### Backend
+- **FastAPI** - 고성능 REST API 프레임워크
+- **BigKinds API** - 뉴스 데이터 소스
+- **OpenAI GPT-4 Turbo** - AI 요약 생성
+- **ChromaDB** - 벡터 데이터베이스
+- **DART API** - 금융감독원 전자공시시스템
+- **KIS API** - 한국투자증권 주식 데이터
 
-### 2. QA 시스템 (backend/services/qa/)
+### Frontend
+- **React 18** - 사용자 인터페이스
+- **TypeScript** - 타입 안정성
+- **Vite** - 빠른 개발 도구
+- **Tailwind CSS** - 유틸리티 기반 CSS
+- **Framer Motion** - 애니메이션 라이브러리
 
-- **vector_db.py**: ChromaDB 기반 벡터 데이터베이스로 뉴스 임베딩을 저장하고 검색합니다.
-- **embeddings.py**: OpenAI 또는 HuggingFace 모델을 사용하여 텍스트 임베딩을 생성합니다.
-- **doc_processor.py**: 뉴스 기사를 적절한 크기로 분할하고 전처리합니다.
-- **retriever.py**: 질의와 관련된 뉴스 기사를 검색합니다.
-- **llm_handler.py**: LLM을 사용하여 질의에 대한 응답을 생성합니다.
-- **prompts.py**: 다양한 사용 사례에 대한 프롬프트 템플릿을 제공합니다.
-- **engine.py**: 모든 QA 구성 요소를 통합하는 메인 엔진입니다.
+### Infrastructure
+- **Python 3.8+**
+- **Node.js 16+**
+- **Docker** (선택사항)
 
-### 3. API 라우트 (backend/api/routes/)
+## ⚙️ 설치 및 실행
 
-- **qa_routes.py**: 질의응답, 요약, 타임라인 생성 등의 API 엔드포인트를 제공합니다.
-
-### 4. 프론트엔드 (frontend/)
-
-- React 기반의 현대적인 UI를 제공합니다.
-- 질의응답, 뉴스 검색, 요약 및 타임라인 시각화 기능을 사용자 친화적으로 제공합니다.
-
-## 설치 방법
-
-### 요구사항
-
-- Python 3.8+
-- Node.js 16+
-- 빅카인즈 API 키
-- OpenAI API 키 (또는 대체 LLM)
-
-### 백엔드 설치
-
+### 1. 프로젝트 클론
 ```bash
-# 프로젝트 클론
-git clone https://github.com/your-org/ai-nova.git
-cd ai-nova
+git clone <repository-url>
+cd big_proto
+```
 
-# 가상환경 생성 및 활성화 (선택사항)
+### 2. 환경 변수 설정
+`.env` 파일을 확인하고 필요한 API 키들이 설정되어 있는지 확인하세요:
+
+```env
+# 필수 API 키
+BIGKINDS_KEY=your_bigkinds_api_key
+OPENAI_API_KEY=your_openai_api_key
+
+# 선택적 API 키들
+PERPLEXITY_API_KEY=your_perplexity_key
+KIS_APP_KEY=your_kis_app_key
+DART_API_KEY=your_dart_api_key
+```
+
+### 3. 백엔드 설정 및 실행
+```bash
+# Python 가상환경 생성 (권장)
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+# venv\Scripts\activate   # Windows
 
 # 의존성 설치
 pip install -r requirements.txt
 
-# 환경변수 설정
-cp config/.env.example config/.env
-# .env 파일을 편집하여 API 키 등을 설정
-```
-
-### 프론트엔드 설치
-
-```bash
-cd frontend
-npm install
-```
-
-## 실행 방법
-
-### 백엔드 서버 실행
-
-```bash
-# 프로젝트 루트 디렉토리에서
+# 서버 실행
 python -m backend.server
 ```
 
-### 프론트엔드 개발 서버 실행
+서버는 기본적으로 `http://localhost:8000`에서 실행됩니다.
 
+### 4. 프론트엔드 설정 및 실행
 ```bash
 cd frontend
+
+# 의존성 설치
+npm install
+
+# 개발 서버 실행
 npm run dev
 ```
 
-## API 사용법
+프론트엔드는 기본적으로 `http://localhost:5173`에서 실행됩니다.
 
-### 질의응답 API
+## 🔑 API 키 발급 방법
 
-```http
-POST /api/qa/query
-{
-  "query": "삼성전자의 최근 실적은 어떤가요?",
-  "search_params": {
-    "date_range": ["2023-01-01", "2023-12-31"]
-  }
-}
+### 필수 API 키
+
+1. **BigKinds API 키**
+   - [BigKinds 웹사이트](https://www.bigkinds.or.kr/) 접속
+   - 회원가입 후 API 신청
+   - 뉴스 데이터 접근을 위해 반드시 필요
+   - **✅ 현재 설정 완료**: `254bec69-1c13-470f-904a-c4bc9e46cc80`
+
+2. **OpenAI API 키**
+   - [OpenAI 플랫폼](https://platform.openai.com/) 접속
+   - 계정 생성 후 API 키 발급
+   - AI 요약 기능을 위해 필요
+   - **✅ 현재 설정 완료**: GPT-4 Turbo 모델 사용 가능
+
+### 선택적 API 키
+
+3. **DART API 키** (기업 공시 정보)
+   - [DART 시스템](https://opendart.fss.or.kr/) 접속
+
+4. **한국투자증권 API** (주식 데이터)
+   - [KIS Developers](https://apiportal.koreainvestment.com/) 접속
+
+## 📖 API 문서
+
+서버 실행 후 다음 URL에서 API 문서를 확인할 수 있습니다:
+- **Swagger UI**: `http://localhost:8000/api/docs`
+- **ReDoc**: `http://localhost:8000/api/redoc`
+
+### 주요 API 엔드포인트
+
+#### 뉴스 관련 API
+- `GET /api/news/latest` - 최신 뉴스 정보
+- `POST /api/news/company` - 기업별 뉴스 타임라인
+- `POST /api/news/ai-summary` - AI 뉴스 요약
+- `GET /api/news/watchlist/suggestions` - 관심 종목 추천
+
+#### 투자 캘린더 API
+- `GET /api/stock-calendar/events` - 경제 일정 조회
+- `POST /api/stock-calendar/analysis` - AI 분석
+
+### BigKinds API 활용
+
+#### 지원하는 필드들
+프로젝트에서 사용하는 주요 뉴스 필드:
+- `title` - 기사 제목
+- `content` - 기사 본문
+- `published_at` - 발행 일시
+- `dateline` - 출고 시간
+- `category` - 뉴스 카테고리
+- `images` - 첨부 이미지
+- `provider_link_page` - 원문 링크
+- `provider_name` - 언론사명
+- `byline` - 기자명
+
+#### 주요 기능
+1. **이슈 랭킹 (issue_ranking)**: 빅카인즈 가이드라인 준수한 실시간 이슈 분석
+2. **인기 검색어 (query_rank)**: 기간별 인기 검색어 랭킹 조회
+3. **카테고리 키워드 (today_category_keyword)**: 카테고리별 핫 키워드 분석
+4. **뉴스 클러스터 검색**: news_cluster ID를 통한 관련 뉴스 그룹 조회
+5. **서울경제신문 필터링**: 자동으로 서울경제 뉴스만 추출
+6. **필드 선택**: 필요한 필드만 가져와서 성능 최적화
+7. **올바른 요청 구조**: `{"access_key": "...", "argument": {...}}` 형식 준수
+8. **에러 처리**: result 값 확인 및 안정적인 API 호출
+
+## 🔍 주요 특징
+
+### AI 요약 시스템
+- **GPT-4 Turbo 모델 사용**: 최신 AI 기술로 정확한 요약 제공
+- **세 가지 요약 방식**: 이슈, 인용, 수치 중심의 맞춤형 분석
+- **실시간 처리**: 선택한 뉴스 기사를 즉시 분석
+
+### 뉴스 데이터 처리
+- **BigKinds API 통합**: 국내 주요 언론사 뉴스 데이터
+- **고급 검색 기능**: 논리 연산자, 필터링, 중복 제거
+- **실시간 업데이트**: 최신 뉴스 자동 수집 및 분석
+
+### 사용자 경험
+- **반응형 디자인**: 모바일/태블릿/데스크톱 지원
+- **다크 모드**: 사용자 선호에 따른 테마 변경
+- **부드러운 애니메이션**: Framer Motion 기반 상호작용
+
+## 📁 프로젝트 구조 상세
+
+### 백엔드 서비스 계층
+- **BigKinds Client**: 뉴스 API 통합 및 데이터 처리
+- **AI Summary Service**: GPT-4 기반 뉴스 요약 생성
+- **Stock Calendar Service**: 경제 일정 및 공시 정보 관리
+- **Logger Utility**: 체계적인 로그 관리 시스템
+
+### 프론트엔드 컴포넌트
+- **HomePage**: 최신 뉴스 탭 인터페이스
+- **WatchlistPage**: 관심 종목 추적 및 AI 요약
+- **StockCalendarPage**: 투자 캘린더 및 일정 관리
+- **Common Components**: 재사용 가능한 UI 컴포넌트
+
+## 🚀 배포 방법
+
+### 개발 환경
+```bash
+# 백엔드
+python -m backend.server
+
+# 프론트엔드
+cd frontend && npm run dev
 ```
 
-### 뉴스 요약 API
+### 프로덕션 환경
+```bash
+# 백엔드 빌드
+pip install -r requirements.txt
+python -m backend.server
 
-```http
-POST /api/qa/summarize
-{
-  "query": "우크라이나 전쟁",
-  "search_params": {
-    "date_range": ["2022-01-01", "2022-12-31"],
-    "provider": ["서울경제"]
-  }
-}
+# 프론트엔드 빌드
+cd frontend
+npm run build
+npm run preview
 ```
 
-### 타임라인 생성 API
-
-```http
-POST /api/qa/timeline
-{
-  "query": "코로나19 백신 개발",
-  "search_params": {
-    "date_range": ["2020-01-01", "2022-12-31"]
-  }
-}
+### Docker 사용 (선택사항)
+```bash
+# Dockerfile을 사용한 컨테이너 빌드
+docker build -t ai-nova .
+docker run -p 8000:8000 -p 5173:5173 ai-nova
 ```
 
-## 기여 방법
+## 🐛 트러블슈팅
 
-1. 이슈 트래커에서 새 기능 요청 또는 버그 리포트를 확인하세요.
-2. 저장소를 포크하고 개발 브랜치를 만드세요.
-3. 코드를 변경하고 테스트를 추가하세요.
-4. 변경사항을 커밋하고 풀 리퀘스트를 제출하세요.
+### 자주 발생하는 문제
 
-## 라이센스
+1. **API 키 오류**
+   ```
+   Error: API 키가 필요합니다
+   ```
+   - `.env` 파일의 API 키 설정 확인
+   - 환경 변수 로드 확인
+
+2. **CORS 오류**
+   ```
+   Access-Control-Allow-Origin 오류
+   ```
+   - `backend/server.py`의 CORS 설정 확인
+   - 프론트엔드 프록시 설정 확인
+
+3. **의존성 오류**
+   ```
+   ModuleNotFoundError
+   ```
+   - `pip install -r requirements.txt` 재실행
+   - `npm install` 재실행
+
+### 로그 확인
+```bash
+# 백엔드 로그
+tail -f logs/server.log
+
+# 특정 서비스 로그
+tail -f logs/api_news_ai_summary.log
+```
+
+## 📝 개발 가이드
+
+### 새로운 API 엔드포인트 추가
+1. `backend/api/routes/` 디렉토리에 라우터 파일 생성
+2. `backend/server.py`에 라우터 등록
+3. 프론트엔드에서 API 호출 코드 작성
+
+### 새로운 페이지 추가
+1. `frontend/src/pages/` 디렉토리에 페이지 컴포넌트 생성
+2. `frontend/src/App.tsx`에 라우트 추가
+3. 네비게이션 메뉴에 링크 추가
+
+### 환경별 설정
+- 개발: `.env.development`
+- 테스트: `.env.test`
+- 프로덕션: `.env.production`
+
+## 📊 성능 최적화
+
+### 백엔드 최적화
+- **비동기 처리**: FastAPI의 async/await 활용
+- **캐싱**: Redis 기반 API 응답 캐싱
+- **연결 풀링**: 데이터베이스 연결 최적화
+
+### 프론트엔드 최적화
+- **코드 분할**: Vite의 동적 import 활용
+- **이미지 최적화**: WebP 형식 및 lazy loading
+- **번들 최적화**: Tree shaking 및 압축
+
+## 🔐 보안 고려사항
+
+### API 보안
+- **API 키 관리**: 환경 변수로 안전한 저장
+- **CORS 설정**: 허용된 도메인만 접근 가능
+- **요청 제한**: Rate limiting 구현
+
+### 데이터 보안
+- **민감 정보 암호화**: API 키 및 토큰 보호
+- **입력 검증**: SQL Injection 및 XSS 방지
+- **HTTPS 사용**: 프로덕션 환경에서 필수
+
+## 📞 지원 및 연락처
+
+### 개발팀 연락처
+- **서울경제신문 디지털혁신팀**
+- 이메일: digital@sedaily.com
+- 전화: 02-3147-2000
+
+### 기술 지원
+- GitHub Issues를 통한 버그 리포트
+- 이메일을 통한 기술 문의
+- 정기 업데이트 및 유지보수
+
+## 📄 라이센스
 
 Copyright © 2025 서울경제신문. All rights reserved.
 
-## 연락처
+이 프로젝트는 서울경제신문의 저작물이며, 상업적 사용을 위해서는 별도의 라이센스가 필요합니다.
 
-서울경제신문 디지털혁신팀 (digital@sedaily.com)
+---
 
-## API 키 설정 가이드
+## 📈 버전 히스토리
 
-본 서비스는 다음 API 키들이 필요합니다:
+### v0.1.0 (2025-01-XX)
+- 초기 프로젝트 구조 설정
+- BigKinds API 통합
+- 기본 뉴스 대시보드 구현
 
-1. **빅카인즈 API 키 (필수)**
+### v0.2.0 (현재)
+- GPT-4 Turbo AI 요약 기능 추가
+- 관심 종목 추적 시스템 구현
+- UI/UX 개선 및 최적화
+- 프로젝트 구조 정리 및 문서화
 
-   - BigKinds API(뉴스 데이터베이스)를 사용하기 위한 API 키
-   - 환경 변수: `BIGKINDS_API_KEY`
+---
 
-2. **OpenAI API 키 (선택)**
-   - 임베딩 생성과 벡터 DB 검색 기능 사용 시 필요
-   - 환경 변수: `OPENAI_API_KEY`
-
-### 환경 변수 설정 방법
-
-1. 프로젝트 루트 디렉토리에 `.env` 파일 생성:
-
-   ```
-   BIGKINDS_API_KEY=your_bigkinds_api_key
-   OPENAI_API_KEY=your_openai_api_key
-   ```
-
-2. 또는 터미널에서 직접 설정 (임시):
-
-   ```bash
-   # macOS/Linux
-   export BIGKINDS_API_KEY=your_bigkinds_api_key
-   export OPENAI_API_KEY=your_openai_api_key
-
-   # Windows
-   set BIGKINDS_API_KEY=your_bigkinds_api_key
-   set OPENAI_API_KEY=your_openai_api_key
-   ```
-
-### 참고사항
-
-- OpenAI API 키가 없는 경우, 대체 오픈소스 임베딩 모델(all-MiniLM-L6-v2)이 자동으로 사용됩니다.
-- BigKinds API 키는 반드시 필요하며, 없을 경우 개발 모드로 작동합니다.
-- 환경 변수 설정 후 서버를 재시작해야 변경사항이 적용됩니다.
-
-### API 키 발급 방법
-
-- **빅카인즈 API 키**: [빅카인즈 웹사이트](https://www.bigkinds.or.kr/)에서 회원가입 후 신청
-- **OpenAI API 키**: [OpenAI 플랫폼](https://platform.openai.com/)에서 계정 생성 후 발급
+**🎯 이 플랫폼을 통해 서울경제신문의 뉴스 분석 역량을 한 단계 업그레이드하세요!**

@@ -1,241 +1,349 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { containerVariants, itemVariants } from "../animations/pageAnimations";
-import useTimeline from "../hooks/useTimeline";
-import TimelineForm from "../components/timeline/TimelineForm";
-import TimelineList from "../components/timeline/TimelineList";
-import TimelineEmpty from "../components/timeline/TimelineEmpty";
-import TimelineLoading from "../components/timeline/TimelineLoading";
+import LoadingSpinner from "../components/common/LoadingSpinner";
 import ErrorMessage from "../components/common/ErrorMessage";
 
-interface FeatureCardProps {
+interface NewsItem {
+  id: string;
   title: string;
-  description: string;
-  icon: React.ReactNode;
-  linkTo?: string;
-  linkText: string;
-  onClick?: () => void;
-  isInline?: boolean;
+  summary?: string;
+  provider?: string;
+  date?: string;
+  category?: string;
+  url?: string;
 }
 
-const FeatureCard: React.FC<FeatureCardProps> = ({
-  title,
-  description,
-  icon,
-  linkTo,
-  linkText,
-  onClick,
-  isInline = false,
-}) => {
-  const content = (
-    <div className="flex flex-col h-full">
-      <div className="mb-4 text-primary-600 dark:text-primary-400">
-        {icon}
-      </div>
-      <h3 className="text-xl font-bold mb-3">{title}</h3>
-      <p className="text-gray-600 dark:text-gray-400 mb-6 flex-grow">
-        {description}
-      </p>
-      <div className="inline-flex items-center text-primary-600 dark:text-primary-400 font-medium mt-auto">
-        {linkText}
-        <svg
-          className="w-5 h-5 ml-1"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M14 5l7 7m0 0l-7 7m7-7H3"
-          ></path>
-        </svg>
-      </div>
-    </div>
-  );
+interface IssueItem {
+  topic_id: string;
+  topic_name: string;
+  rank: number;
+  score: number;
+  news_cluster: string[];
+}
 
-  return (
-    <motion.div
-      className="card hover:shadow-lg cursor-pointer transition-all"
-      whileHover={{ y: -5, transition: { duration: 0.2 } }}
-      onClick={onClick}
-    >
-      {isInline ? content : <Link to={linkTo!}>{content}</Link>}
-    </motion.div>
-  );
-};
+interface KeywordItem {
+  keyword: string;
+  category: string;
+  score: number;
+  rank?: number;
+}
+
+interface TabProps {
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+const Tab: React.FC<TabProps> = ({ label, isActive, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`px-6 py-3 font-medium transition-all ${
+      isActive
+        ? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400"
+        : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+    }`}
+  >
+    {label}
+  </button>
+);
+
+const NewsCard: React.FC<{ item: NewsItem }> = ({ item }) => (
+  <motion.div
+    variants={itemVariants}
+    whileHover={{ scale: 1.02 }}
+    className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-all cursor-pointer"
+  >
+    <div className="flex items-start justify-between mb-3">
+      <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">
+        {item.provider}
+      </span>
+      <span className="text-xs text-gray-500 dark:text-gray-400">
+        {item.date}
+      </span>
+    </div>
+    
+    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 line-clamp-2">
+      {item.title}
+    </h3>
+    
+    {item.summary && (
+      <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
+        {item.summary}
+      </p>
+    )}
+    
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+        {item.category}
+      </span>
+      <Link
+        to={item.url || "#"}
+        className="text-primary-600 dark:text-primary-400 text-sm hover:underline"
+      >
+        자세히 보기 →
+      </Link>
+    </div>
+  </motion.div>
+);
+
+const IssueCard: React.FC<{ item: IssueItem }> = ({ item }) => (
+  <motion.div
+    variants={itemVariants}
+    className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer"
+    whileHover={{ scale: 1.02 }}
+  >
+    <div className="flex items-center justify-between mb-4">
+      <span className="text-2xl font-bold text-primary-600 dark:text-primary-400">
+        #{item.rank}
+      </span>
+      <span className="px-3 py-1 rounded-full text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+        점수: {item.score}
+      </span>
+    </div>
+    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+      {item.topic_name}
+    </h3>
+    <div className="flex items-center justify-between">
+      <p className="text-gray-600 dark:text-gray-400 text-sm">
+        관련 뉴스: <span className="font-semibold">{item.news_cluster.length}개</span>
+      </p>
+      <span className="text-xs text-gray-500 dark:text-gray-400">
+        ID: {item.topic_id}
+      </span>
+    </div>
+  </motion.div>
+);
+
+const KeywordTag: React.FC<{ item: KeywordItem }> = ({ item }) => (
+  <motion.span
+    variants={itemVariants}
+    whileHover={{ scale: 1.05 }}
+    className="inline-flex items-center justify-between bg-gradient-to-r from-primary-50 to-primary-100 dark:from-primary-900 dark:to-primary-800 text-primary-700 dark:text-primary-300 px-4 py-3 rounded-lg font-medium cursor-pointer transition-all hover:shadow-md"
+  >
+    <div>
+      <div className="font-semibold">{item.keyword}</div>
+      {item.rank && (
+        <div className="text-xs opacity-70">#{item.rank}</div>
+      )}
+    </div>
+    <span className="ml-2 text-xs opacity-70">{item.category}</span>
+  </motion.span>
+);
 
 /**
  * 홈페이지 컴포넌트
  */
 const HomePage: React.FC = () => {
-  const [showTimeline, setShowTimeline] = useState(false);
-  const timeline = useTimeline();
+  const [activeTab, setActiveTab] = useState<"issues" | "keywords">("issues");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [latestNews, setLatestNews] = useState<{
+    today_issues: IssueItem[];
+    popular_keywords: KeywordItem[];
+  }>({
+    today_issues: [],
+    popular_keywords: []
+  });
 
-  const handleTimelineClick = () => {
-    setShowTimeline(!showTimeline);
+  useEffect(() => {
+    fetchLatestNews();
+  }, []);
+
+  const fetchLatestNews = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch("/api/news/latest");
+      if (!response.ok) {
+        throw new Error("최신 뉴스를 불러오는데 실패했습니다");
+      }
+      
+      const data = await response.json();
+      setLatestNews(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다");
+      // 개발 중 더미 데이터 사용 (이슈 랭킹 구조)
+      setLatestNews({
+        today_issues: [
+          {
+            topic_id: "issue_001",
+            topic_name: "반도체 수출 증가",
+            rank: 1,
+            score: 95.2,
+            news_cluster: ["cluster_001", "cluster_002"]
+          },
+          {
+            topic_id: "issue_002", 
+            topic_name: "AI 스타트업 투자",
+            rank: 2,
+            score: 89.7,
+            news_cluster: ["cluster_003", "cluster_004"]
+          },
+          {
+            topic_id: "issue_003",
+            topic_name: "디지털 금융 혁신",
+            rank: 3,
+            score: 82.5,
+            news_cluster: ["cluster_005"]
+          },
+          {
+            topic_id: "issue_004",
+            topic_name: "카보네이트리티 정책",
+            rank: 4,
+            score: 78.9,
+            news_cluster: ["cluster_006"]
+          },
+          {
+            topic_id: "issue_005",
+            topic_name: "K-콘텐츠 해외진출",
+            rank: 5,
+            score: 75.3,
+            news_cluster: ["cluster_007"]
+          }
+        ],
+        popular_keywords: [
+          { keyword: "생성 AI", rank: 1, category: "기술", score: 95 },
+          { keyword: "ESG 경영", rank: 2, category: "경영", score: 92 },
+          { keyword: "메타버스", rank: 3, category: "기술", score: 88 },
+          { keyword: "탄소중립", rank: 4, category: "환경", score: 85 },
+          { keyword: "디지털전환", rank: 5, category: "산업", score: 82 },
+          { keyword: "비대면 금융", rank: 6, category: "금융", score: 79 },
+          { keyword: "자동차 전동화", rank: 7, category: "자동차", score: 76 }
+        ]
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
 
   return (
     <motion.div
       initial="hidden"
       animate="visible"
       variants={containerVariants}
-      className="space-y-12"
+      className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
     >
-      {/* 히어로 섹션 */}
-      <motion.div variants={itemVariants} className="text-center">
-        <div className="glass-panel p-10 md:p-16">
-          <h1 className="text-4xl md:text-5xl font-bold mb-6">
-            <span className="text-primary-600 dark:text-primary-400">
-              AI NOVA
-            </span>
-            로
-            <br /> 뉴스를 더 스마트하게
-          </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
-            인공지능 기술로 뉴스를 분석하고 질문에 답하며 통찰력을 제공하는
-            서비스입니다.
-          </p>
-        </div>
-      </motion.div>
-
-      {/* 기능 소개 섹션 */}
-      <motion.div variants={itemVariants}>
-        <h2 className="text-2xl font-bold mb-6 text-center">주요 기능</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <FeatureCard
-            title="뉴스 Q&A"
-            description="뉴스 데이터베이스에 질문하고 정확한 답변을 받아보세요. AI가 최신 뉴스 기사를 분석하여 답변합니다."
-            icon={
-              <svg
-                className="w-10 h-10"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                ></path>
-              </svg>
-            }
-            linkTo="/qa"
-            linkText="질문하러 가기"
-          />
-          <FeatureCard
-            title="뉴스 요약"
-            description="복잡한 뉴스 기사를 AI가 핵심만 간결하게 요약해 드립니다. 중요한 포인트를 놓치지 마세요."
-            icon={
-              <svg
-                className="w-10 h-10"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                ></path>
-              </svg>
-            }
-            linkTo="/summary"
-            linkText="요약 시작하기"
-          />
-          <FeatureCard
-            title="뉴스 타임라인"
-            description="키워드 기반으로 뉴스 사건의 시간순 흐름을 확인하세요. 복잡한 이슈의 전개 과정을 한눈에 파악할 수 있습니다."
-            icon={
-              <svg
-                className="w-10 h-10"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                ></path>
-              </svg>
-            }
-            linkText={showTimeline ? "타임라인 숨기기" : "타임라인 보기"}
-            onClick={handleTimelineClick}
-            isInline={true}
-          />
-        </div>
-      </motion.div>
-
-      {/* 타임라인 섹션 */}
-      {showTimeline && (
-        <motion.div 
+      {/* 헤더 */}
+      <div className="text-center mb-12">
+        <motion.h1
           variants={itemVariants}
-          initial="hidden"
-          animate="visible"
-          exit="hidden"
+          className="text-4xl font-bold text-gray-900 dark:text-white mb-4"
         >
-          <h2 className="text-2xl font-bold mb-6 text-center">뉴스 타임라인</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* 검색 폼 영역 */}
-            <div>
-              <TimelineForm
-                keywords={timeline.keywords}
-                dateFrom={timeline.dateFrom}
-                dateTo={timeline.dateTo}
-                isLoading={timeline.isLoading}
-                setKeywords={timeline.setKeywords}
-                setDateFrom={timeline.setDateFrom}
-                setDateTo={timeline.setDateTo}
-                handleSubmit={timeline.handleSubmit}
-                handleKeywordClick={timeline.handleKeywordClick}
-              />
-            </div>
+          🚀 AI NOVA
+        </motion.h1>
+        <motion.p
+          variants={itemVariants}
+          className="text-xl text-gray-600 dark:text-gray-400"
+        >
+          빅카인즈 기반 스마트 뉴스 분석 플랫폼
+        </motion.p>
+      </div>
 
-            {/* 결과 표시 영역 */}
-            <div className="lg:col-span-2">
-              {/* 에러 메시지 */}
-              <ErrorMessage message={timeline.error} />
-
-              {/* 로딩 상태 */}
-              {timeline.isLoading && <TimelineLoading />}
-
-              {/* 타임라인 목록 */}
-              {!timeline.isLoading && timeline.timeline.length > 0 && (
-                <TimelineList items={timeline.timeline} />
-              )}
-
-              {/* 빈 상태 */}
-              {!timeline.isLoading && timeline.timeline.length === 0 && !timeline.error && (
-                <TimelineEmpty />
-              )}
-            </div>
-          </div>
+      {/* 에러 메시지 */}
+      {error && (
+        <motion.div variants={itemVariants} className="mb-8">
+          <ErrorMessage message={error} />
         </motion.div>
       )}
 
-      {/* 빅카인즈 AI 임베딩 섹션 */}
-      <motion.div variants={itemVariants} className="mt-12">
-        <h2 className="text-2xl font-bold mb-6 text-center">빅카인즈 AI 바로 사용하기</h2>
-        <div className="glass-panel p-4">
-          <iframe
-            src="https://www.bigkinds.or.kr/bigkindsAi/home.do"
-            className="w-full h-[800px] rounded-lg border-0"
-            title="빅카인즈 AI"
-            loading="lazy"
-            allowFullScreen
+      {/* 최신 뉴스 대시보드 */}
+      <motion.div
+        variants={itemVariants}
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8"
+      >
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+          📊 최신 뉴스 대시보드
+        </h2>
+
+        {/* 탭 네비게이션 */}
+        <div className="flex space-x-8 border-b border-gray-200 dark:border-gray-700">
+          <Tab
+            label="오늘의 이슈"
+            isActive={activeTab === "issues"}
+            onClick={() => setActiveTab("issues")}
+          />
+          <Tab
+            label="인기 키워드"
+            isActive={activeTab === "keywords"}
+            onClick={() => setActiveTab("keywords")}
           />
         </div>
+
+        {/* 탭 컨텐츠 */}
+        <div className="mt-8">
+          {activeTab === "issues" && (
+            <motion.div
+              key="issues"
+              initial="hidden"
+              animate="visible"
+              variants={containerVariants}
+            >
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  이슈 랭킹
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  오늘 가장 주목받는 이슈들을 점수 순으로 보여드립니다.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {latestNews.today_issues.map((item) => (
+                  <IssueCard key={item.topic_id} item={item} />
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === "keywords" && (
+            <motion.div
+              key="keywords"
+              initial="hidden"
+              animate="visible"
+              variants={containerVariants}
+            >
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  인기 키워드 랭킹
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  카테고리별로 인기 있는 키워드들을 확인하세요.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {latestNews.popular_keywords.map((item, index) => (
+                  <KeywordTag key={index} item={item} />
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </motion.div>
+
+      {/* CTA 섹션 */}
+      <motion.div
+        variants={itemVariants}
+        className="mt-12 text-center bg-gradient-to-r from-primary-500 to-primary-600 dark:from-primary-600 dark:to-primary-700 rounded-lg p-8 text-white"
+      >
+        <h3 className="text-2xl font-bold mb-4">관심 종목을 추적해보세요</h3>
+        <p className="text-lg opacity-90 mb-6">
+          AI 기반 뉴스 요약과 타임라인으로 기업 동향을 한눈에 파악하세요
+        </p>
+        <Link
+          to="/watchlist"
+          className="inline-flex items-center bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+        >
+          관심 종목 추가하기
+          <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
       </motion.div>
     </motion.div>
   );

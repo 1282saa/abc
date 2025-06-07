@@ -36,30 +36,21 @@ const Header: React.FC<HeaderProps> = ({ theme, toggleTheme }) => {
           </div>
 
           {/* 네비게이션 링크 */}
-          <nav className="flex space-x-6 ml-10">
+          <nav className="flex space-x-8 ml-10">
             <Link to="/" className={`${isActive("/")} transition-colors`}>
               홈
             </Link>
-            <Link to="/qa" className={`${isActive("/qa")} transition-colors`}>
-              뉴스 Q&A
-            </Link>
             <Link
-              to="/summary"
-              className={`${isActive("/summary")} transition-colors`}
+              to="/watchlist"
+              className={`${isActive("/watchlist")} transition-colors`}
             >
-              뉴스 요약
-            </Link>
-            <Link
-              to="/timeline"
-              className={`${isActive("/timeline")} transition-colors`}
-            >
-              뉴스 타임라인
+              관심 종목
             </Link>
             <Link
               to="/stock-calendar"
               className={`${isActive("/stock-calendar")} transition-colors`}
             >
-              주식 캘린더
+              투자 캘린더
             </Link>
           </nav>
 
