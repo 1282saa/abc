@@ -933,6 +933,138 @@ async def get_watchlist_data(
             "error": str(e)
         }
 
+@router.get("/related-questions/{keyword}")
+async def get_related_questions(
+    keyword: str = Path(..., description="검색 키워드"),
+    days: Optional[int] = Query(None, description="검색 기간(일)", ge=1, le=365),
+    date_from: Optional[str] = Query(None, description="시작일(YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="종료일(YYYY-MM-DD)"),
+    max_questions: int = Query(7, description="최대 질문 수", ge=1, le=20),
+    bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)
+):
+    """키워드 기반 연관 질문 생성
+    
+    키워드를 바탕으로 연관 검색어와 TopN 키워드를 분석하여 연관 질문을 생성합니다.
+    """
+    from api.utils.keywords_utils import (
+        filter_keywords, score_keywords, create_boolean_queries, 
+        keywords_to_questions, get_topic_sensitive_date_range
+    )
+    
+    logger = setup_logger("api.news.related_questions")
+    logger.info(f"연관 질문 요청: {keyword}")
+    
+    try:
+        # 주제 기반 기간 설정
+        topic_date_range = get_topic_sensitive_date_range(keyword)
+        
+        # 사용자 지정 기간 처리
+        if date_from and date_to:
+            period = {"date_from": date_from, "date_to": date_to}
+        elif days:
+            # 일수로 기간 지정
+            date_to = datetime.now().strftime("%Y-%m-%d")
+            date_from = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            period = {"date_from": date_from, "date_to": date_to}
+        else:
+            # 주제 기반 기간 사용
+            period = {
+                "date_from": topic_date_range["date_from"],
+                "date_to": topic_date_range["date_to"]
+            }
+        
+        # 1단계: 연관어와 TopN 키워드 가져오기
+        related_keywords = bigkinds_client.get_related_keywords(
+            keyword=keyword, 
+            max_count=20,
+            date_from=period["date_from"],
+            date_to=period["date_to"]
+        )
+        
+        topn_keywords = bigkinds_client.get_keyword_topn(
+            keyword=keyword,
+            date_from=period["date_from"],
+            date_to=period["date_to"]
+        )
+        
+        # 2단계: 키워드 필터링 및 점수화
+        filtered_related = filter_keywords(related_keywords)
+        filtered_topn = filter_keywords(topn_keywords)
+        
+        # 키워드가 너무 적으면 기간 확장 시도
+        if len(filtered_related) < 5 or len(filtered_topn) < 5:
+            # 기간 확장 (60일)
+            extended_date_from = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
+            
+            # 확장된 기간으로 다시 시도
+            extended_related = bigkinds_client.get_related_keywords(
+                keyword=keyword, 
+                max_count=30,
+                date_from=extended_date_from,
+                date_to=period["date_to"]
+            )
+            
+            extended_topn = bigkinds_client.get_keyword_topn(
+                keyword=keyword,
+                date_from=extended_date_from,
+                date_to=period["date_to"],
+                limit=30
+            )
+            
+            # 확장된 결과로 업데이트 (기존 결과가 충분하면 유지)
+            if len(filtered_related) < 5 and len(extended_related) > len(filtered_related):
+                filtered_related = filter_keywords(extended_related)
+                
+            if len(filtered_topn) < 5 and len(extended_topn) > len(filtered_topn):
+                filtered_topn = filter_keywords(extended_topn)
+                
+            # 기간 정보 업데이트
+            period["date_from"] = extended_date_from
+        
+        # 키워드 점수 계산
+        keyword_scores = score_keywords(keyword, filtered_related, filtered_topn)
+        
+        # 3단계: 점수 기반 상위 키워드 선택
+        sorted_keywords = sorted(keyword_scores.keys(), key=lambda k: keyword_scores[k], reverse=True)
+        top_keywords = sorted_keywords[:15]  # 상위 15개만 사용
+        
+        # 4단계: 쿼리 변형 생성
+        query_variations = create_boolean_queries(keyword, top_keywords, max_variations=10)
+        
+        # 5단계: 질문 생성
+        questions = keywords_to_questions(keyword, query_variations)
+        
+        # 최대 질문 수로 제한
+        limited_questions = questions[:max_questions]
+        
+        return {
+            "success": True,
+            "keyword": keyword,
+            "period": {
+                "from": period["date_from"],
+                "to": period["date_to"]
+            },
+            "detected_topic": topic_date_range.get("detected_topic"),
+            "questions": limited_questions,
+            "total_questions": len(limited_questions),
+            "keywords": {
+                "related": filtered_related[:10],
+                "topn": filtered_topn[:10],
+                "top_scored": top_keywords[:10]
+            },
+            "generated_at": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"연관 질문 생성 오류: {e}", exc_info=True)
+        return {
+            "success": False,
+            "keyword": keyword,
+            "error": str(e),
+            "questions": [],
+            "generated_at": datetime.now().isoformat()
+        }
+
 @router.post("/search/news")
 async def search_news_content(
     keyword: str = Query(..., description="검색 키워드"),
@@ -1068,3 +1200,74 @@ async def search_news_content_get(
     except Exception as e:
         logger.error(f"뉴스 내용 검색 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"뉴스 내용 검색 중 오류 발생: {str(e)}")
+
+@router.get("/search-by-question")
+async def search_by_question(
+    query: str = Query(..., description="검색 쿼리 (불리언 연산자 지원)"),
+    question: Optional[str] = Query(None, description="원래 질문 (표시용)"),
+    date_from: Optional[str] = Query(None, description="시작일 (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="종료일 (YYYY-MM-DD)"),
+    limit: int = Query(10, description="결과 수", ge=1, le=100),
+    bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)
+):
+    """질문 기반 뉴스 검색
+    
+    연관 질문에서 생성된 불리언 쿼리로 뉴스를 검색합니다.
+    """
+    logger = setup_logger("api.news.search_by_question")
+    logger.info(f"질문 검색 요청: '{query}', 질문: '{question}'")
+    
+    try:
+        # 날짜 기본값 설정 (최근 30일)
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            date_to = datetime.now().strftime("%Y-%m-%d")
+        
+        # 필수 필드 설정 (content 포함)
+        fields = [
+            "news_id",
+            "title",
+            "content",  # 전체 내용 포함
+            "summary",
+            "published_at",
+            "provider_name",
+            "provider_code",
+            "provider_link_page",
+            "byline",
+            "category",
+            "images"
+        ]
+        
+        # BigKinds API로 뉴스 검색
+        result = bigkinds_client.search_news(
+            query=query,
+            date_from=date_from,
+            date_to=date_to,
+            return_size=limit,
+            fields=fields
+        )
+        
+        # 응답 포맷팅
+        formatted_result = bigkinds_client.format_news_response(result)
+        
+        if not formatted_result.get("success", False):
+            raise HTTPException(status_code=404, detail="검색 결과를 찾을 수 없습니다")
+        
+        return {
+            "success": True,
+            "original_query": query,
+            "question": question or "질문 정보 없음",
+            "period": {
+                "from": date_from,
+                "to": date_to
+            },
+            "total_count": formatted_result.get("total_hits", 0),
+            "articles": formatted_result.get("documents", [])
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"질문 검색 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"질문 검색 중 오류 발생: {str(e)}")

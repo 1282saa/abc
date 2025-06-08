@@ -77,3 +77,24 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Frontend build artifacts
+frontend/dist/
+frontend/.vite/
+
+# Backup files
+*.bak
+*.old
+*.backup
+*.tmp
+
+# Development files
+backup-legacy/
+output/
+
+# Database files
+*.sqlite3
+*.db
+
+# Log files (specific patterns)
+logs/*.log

@@ -21,7 +21,17 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 from backend.utils.logger import setup_logger
 from backend.api.routes.stock_calendar_routes import router as stock_calendar_router
+# 기존 전체 라우터 (향후 삭제 예정)
 from backend.api.routes.news_routes import router as news_router
+
+# 분리된 새 라우터들
+from backend.api.routes.latest_news_routes import router as latest_news_router
+# TODO: 다음 분리된 라우터들도 추가
+# from backend.api.routes.company_news_routes import router as company_news_router
+# from backend.api.routes.search_routes import router as search_routes_router
+# from backend.api.routes.related_questions_routes import router as related_questions_router
+# from backend.api.routes.ai_summary_routes import router as ai_summary_router
+# from backend.api.routes.watchlist_routes import router as watchlist_router
 
 # 로거 설정
 logger = setup_logger("server")
@@ -46,7 +56,18 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(stock_calendar_router)
+
+# 기존 전체 라우터 등록 (향후 모든 기능이 분리되면 삭제)
 app.include_router(news_router)
+
+# 분리된 새 라우터들 등록
+app.include_router(latest_news_router)
+# TODO: 분리된 라우터들도 추가
+# app.include_router(company_news_router)
+# app.include_router(search_routes_router)
+# app.include_router(related_questions_router)
+# app.include_router(ai_summary_router)
+# app.include_router(watchlist_router)
 
 @app.get("/api/health")
 async def health_check():
