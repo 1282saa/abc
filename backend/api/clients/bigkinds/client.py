@@ -210,7 +210,8 @@ class BigKindsClient:
         Returns:
             이슈 랭킹 정보
         """
-        endpoint = "issue/ranking"
+        # 올바른 엔드포인트 사용 (constants.py에 정의된 값 사용)
+        endpoint = API_ENDPOINTS["issue_ranking"]
         
         # 날짜 기본값 설정
         if not date:
@@ -796,7 +797,13 @@ class BigKindsClient:
     
     def issue_ranking(self, date: str, provider: Optional[List[str]] = None) -> Dict[str, Any]:
         """기존 코드 호환성을 위한 래퍼 메소드"""
-        return self.get_issue_ranking(date)
+        # 카테고리 코드 전달 (provider 파라미터가 있는 경우)
+        category_code = None
+        if provider and len(provider) > 0:
+            # 첫 번째 provider 코드를 카테고리 코드로 사용
+            category_code = provider[0]
+        
+        return self.get_issue_ranking(date=date, category_code=category_code)
     
     def today_category_keyword(self) -> Dict[str, Any]:
         """기존 코드 호환성을 위한 래퍼 메소드"""
@@ -814,4 +821,405 @@ class BigKindsClient:
     
     def format_quotation_response(self, api_response: Dict[str, Any]) -> Dict[str, Any]:
         """인용문 검색 API 응답 포맷팅"""
-        return format_quotation_response(api_response) 
+        return format_quotation_response(api_response)
+    
+    def generate_related_questions(
+        self,
+        keyword: str,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        max_questions: int = 10,
+        cluster_count: int = 5,
+        max_recursion_depth: int = 2,
+        min_articles_per_query: int = 3
+    ) -> List[Dict[str, Any]]:
+        """키워드 기반 연관 질문 생성
+        
+        Args:
+            keyword: 초기 검색 키워드
+            date_from: 시작일 (YYYY-MM-DD)
+            date_to: 종료일 (YYYY-MM-DD)
+            max_questions: 생성할 최대 질문 수
+            cluster_count: 키워드 클러스터링 그룹 수
+            max_recursion_depth: 쿼리 확장 최대 재귀 깊이
+            min_articles_per_query: 유효한 쿼리로 판단할 최소 기사 수
+            
+        Returns:
+            생성된 연관 질문 목록
+        """
+        import numpy as np
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.cluster import KMeans
+        from sklearn.metrics.pairwise import cosine_similarity
+        import re
+        
+        self.logger.info(f"'{keyword}' 키워드 기반 연관 질문 생성 시작")
+        
+        # 1. 키워드 수집 & 초기 검색
+        # 1-1. 초기 뉴스 검색
+        news_result = self.search_news(
+            query=keyword,
+            date_from=date_from,
+            date_to=date_to,
+            return_size=30
+        )
+        formatted_news = format_news_response(news_result)
+        
+        if not formatted_news.get("documents"):
+            self.logger.warning(f"'{keyword}' 검색 결과 없음")
+            return []
+        
+        # 1-2. 연관 키워드 수집
+        related_keywords = self.get_related_keywords(
+            keyword=keyword,
+            date_from=date_from,
+            date_to=date_to,
+            max_count=30
+        )
+        
+        # 1-3. TopN 키워드 수집
+        topn_keywords = self.get_keyword_topn(
+            keyword=keyword,
+            date_from=date_from,
+            date_to=date_to,
+            limit=30
+        )
+        
+        # 1-4. 인기 검색어 수집 (참고용)
+        popular_keywords_result = self.get_popular_keywords(days=7, limit=20)
+        popular_keywords = []
+        if popular_keywords_result.get("formatted_keywords"):
+            popular_keywords = [item.get("keyword") for item in popular_keywords_result.get("formatted_keywords", [])]
+        
+        # 2. 키워드 필터링 & 점수화
+        # 2-1. 모든 키워드 병합 및 중복 제거
+        all_keywords = []
+        # 연관어 키워드 (가중치: 1.5)
+        for idx, kw in enumerate(related_keywords):
+            all_keywords.append({
+                "keyword": kw,
+                "source": "related",
+                "rank": idx + 1,
+                "weight": 1.5 * (1.0 / (idx + 1)),
+                "has_original": keyword.lower() in kw.lower()
+            })
+        
+        # TopN 키워드 (가중치: 1.2)
+        for idx, kw in enumerate(topn_keywords):
+            all_keywords.append({
+                "keyword": kw,
+                "source": "topn",
+                "rank": idx + 1,
+                "weight": 1.2 * (1.0 / (idx + 1)),
+                "has_original": keyword.lower() in kw.lower()
+            })
+        
+        # 인기 검색어 (가중치: 1.0)
+        for idx, kw in enumerate(popular_keywords):
+            all_keywords.append({
+                "keyword": kw,
+                "source": "popular",
+                "rank": idx + 1,
+                "weight": 1.0 * (1.0 / (idx + 1)),
+                "has_original": keyword.lower() in kw.lower()
+            })
+        
+        # 2-2. 키워드 필터링
+        # - 최소 길이 2자 이상
+        # - 숫자만으로 구성된 키워드 제외
+        # - 특수문자만으로 구성된 키워드 제외
+        filtered_keywords = []
+        seen_keywords = set()
+        
+        for kw_data in all_keywords:
+            kw = kw_data["keyword"]
+            
+            # 이미 처리한 키워드 건너뛰기
+            if kw.lower() in seen_keywords:
+                continue
+                
+            # 필터링 조건
+            if len(kw) < 2:
+                continue
+            if re.match(r'^\d+$', kw):
+                continue
+            if re.match(r'^[^\w\s가-힣]+$', kw):
+                continue
+                
+            # 원래 키워드와 동일한 경우 (대소문자 무시)
+            if kw.lower() == keyword.lower():
+                continue
+                
+            # 통과한 키워드 추가
+            filtered_keywords.append(kw_data)
+            seen_keywords.add(kw.lower())
+        
+        # 키워드가 없으면 빈 결과 반환
+        if not filtered_keywords:
+            self.logger.warning(f"'{keyword}' 관련 필터링된 키워드 없음")
+            return []
+            
+        # 2-3. 키워드 가중치 추가 점수화
+        # - 원본 키워드 포함 시 보너스
+        # - 중복 출현 시 보너스
+        scored_keywords = []
+        keyword_scores = {}
+        
+        for kw_data in filtered_keywords:
+            kw = kw_data["keyword"]
+            score = kw_data["weight"]
+            
+            # 원본 키워드 포함 보너스
+            if kw_data["has_original"]:
+                score *= 1.3
+                
+            # 키워드 점수 누적
+            if kw in keyword_scores:
+                keyword_scores[kw] += score
+            else:
+                keyword_scores[kw] = score
+        
+        # 점수화된 키워드 목록 생성
+        for kw, score in keyword_scores.items():
+            scored_keywords.append({
+                "keyword": kw,
+                "score": score
+            })
+            
+        # 점수 기준 내림차순 정렬
+        scored_keywords.sort(key=lambda x: x["score"], reverse=True)
+        
+        # 상위 키워드만 선택 (클러스터링 효율성 위해)
+        top_keywords = scored_keywords[:min(50, len(scored_keywords))]
+        
+        # 3. 클러스터링으로 대표 키워드 선정
+        # 3-1. 텍스트 벡터화
+        keyword_texts = [item["keyword"] for item in top_keywords]
+        
+        # 데이터가 충분하지 않으면 클러스터링 건너뛰기
+        if len(keyword_texts) < cluster_count:
+            representative_keywords = keyword_texts
+        else:
+            try:
+                # TF-IDF 벡터화
+                vectorizer = TfidfVectorizer()
+                X = vectorizer.fit_transform(keyword_texts)
+                
+                # K-means 클러스터링
+                actual_clusters = min(cluster_count, len(keyword_texts))
+                kmeans = KMeans(n_clusters=actual_clusters, random_state=42)
+                kmeans.fit(X)
+                
+                # 각 클러스터 중심에 가장 가까운 키워드 선택
+                centers = kmeans.cluster_centers_
+                representative_keywords = []
+                
+                for i in range(actual_clusters):
+                    # 현재 클러스터에 속한 키워드 인덱스
+                    cluster_indices = np.where(kmeans.labels_ == i)[0]
+                    
+                    if len(cluster_indices) > 0:
+                        # 클러스터 내 각 키워드와 중심 간의 유사도 계산
+                        cluster_vectors = X[cluster_indices]
+                        center_vector = centers[i].reshape(1, -1)
+                        similarities = cosine_similarity(cluster_vectors, center_vector)
+                        
+                        # 가장 유사한 키워드 선택
+                        most_similar_idx = cluster_indices[np.argmax(similarities)]
+                        representative_keywords.append(keyword_texts[most_similar_idx])
+                        
+                        # 충분히 큰 클러스터면 두 번째로 유사한 키워드도 추가
+                        if len(cluster_indices) >= 5 and len(representative_keywords) < max_questions:
+                            # 이미 선택된 인덱스 제외
+                            remaining_indices = [idx for idx in cluster_indices if idx != most_similar_idx]
+                            if remaining_indices:
+                                remaining_vectors = X[remaining_indices]
+                                second_similarities = cosine_similarity(remaining_vectors, center_vector)
+                                second_similar_idx = remaining_indices[np.argmax(second_similarities)]
+                                representative_keywords.append(keyword_texts[second_similar_idx])
+            except Exception as e:
+                self.logger.error(f"클러스터링 오류: {str(e)}")
+                # 오류 발생 시 점수 기준 상위 키워드 사용
+                representative_keywords = [item["keyword"] for item in top_keywords[:cluster_count]]
+        
+        # 4. 쿼리 변형 & 재귀 확장 탐색
+        # 4-1. 쿼리 변형 생성 함수
+        def generate_query_variants(base_keyword, expand_keyword):
+            variants = []
+            
+            # 정교화(AND) 변형
+            variants.append({
+                "type": "AND",
+                "query": f"{base_keyword} {expand_keyword}",
+                "description": f"{base_keyword}와(과) {expand_keyword}에 관한"
+            })
+            
+            # 확장(OR) 변형
+            variants.append({
+                "type": "OR",
+                "query": f"{base_keyword} OR {expand_keyword}",
+                "description": f"{base_keyword} 또는 {expand_keyword}에 관한"
+            })
+            
+            # 제외(NOT) 변형 - base_keyword와 expand_keyword가 충분히 다른 경우만
+            if base_keyword.lower() not in expand_keyword.lower() and expand_keyword.lower() not in base_keyword.lower():
+                variants.append({
+                    "type": "NOT",
+                    "query": f"{base_keyword} NOT {expand_keyword}",
+                    "description": f"{expand_keyword}을(를) 제외한 {base_keyword}에 관한"
+                })
+                
+            return variants
+        
+        # 4-2. 재귀 확장 탐색 함수
+        def explore_queries(base_keyword, keywords, depth=0, results=None):
+            if results is None:
+                results = []
+                
+            # 최대 재귀 깊이 초과 시 중단
+            if depth >= max_recursion_depth:
+                return results
+                
+            # 결과 수 제한 도달 시 중단
+            if len(results) >= max_questions:
+                return results[:max_questions]
+                
+            for kw in keywords:
+                # 이미 충분한 결과가 있으면 중단
+                if len(results) >= max_questions:
+                    break
+                    
+                # 쿼리 변형 생성
+                variants = generate_query_variants(base_keyword, kw)
+                
+                for variant in variants:
+                    # 결과 제한 확인
+                    if len(results) >= max_questions:
+                        break
+                        
+                    # 이미 동일한 쿼리가 있는지 확인
+                    if any(r["query"] == variant["query"] for r in results):
+                        continue
+                    
+                    # 변형 쿼리로 뉴스 검색
+                    search_result = self.search_news(
+                        query=variant["query"],
+                        date_from=date_from,
+                        date_to=date_to,
+                        return_size=min_articles_per_query
+                    )
+                    
+                    formatted_result = format_news_response(search_result)
+                    article_count = len(formatted_result.get("documents", []))
+                    
+                    # 최소 기사 수 이상인 경우만 유효한 쿼리로 간주
+                    if article_count >= min_articles_per_query:
+                        # 관련 기사 제목 추출 (질문 생성 참고용)
+                        titles = [doc.get("title", "") for doc in formatted_result.get("documents", [])[:3]]
+                        
+                        result_item = {
+                            "query": variant["query"],
+                            "type": variant["type"],
+                            "description": variant["description"],
+                            "article_count": article_count,
+                            "depth": depth,
+                            "reference_titles": titles,
+                            "question": ""  # 나중에 채워질 필드
+                        }
+                        
+                        results.append(result_item)
+                        
+                        # 재귀 호출 (깊이 증가)
+                        if depth < max_recursion_depth - 1 and len(results) < max_questions:
+                            # 재귀 호출은 결과가 적은 경우만 수행
+                            if article_count < 50:
+                                # 이 쿼리 결과에서 키워드 추출
+                                sub_keywords = []
+                                try:
+                                    sub_topn = self.get_keyword_topn(
+                                        keyword=variant["query"],
+                                        date_from=date_from,
+                                        date_to=date_to,
+                                        limit=5
+                                    )
+                                    sub_keywords = sub_topn[:2]  # 상위 2개만 사용
+                                except:
+                                    pass
+                                
+                                if sub_keywords:
+                                    explore_queries(variant["query"], sub_keywords, depth+1, results)
+            
+            return results
+        
+        # 4-3. 쿼리 확장 실행
+        expanded_queries = explore_queries(keyword, representative_keywords)
+        
+        # 5. 질문 생성 & 순위 매기기
+        # 5-1. 질문 템플릿 정의
+        question_templates = [
+            "{keyword}의 최근 동향은?",
+            "{keyword}에 대해 알려주세요",
+            "{keyword}에 관한 최신 뉴스는?",
+            "{keyword}의 주요 이슈는?",
+            "{keyword}의 핵심 내용은?",
+            "{keyword}에 대한 분석이 필요합니다",
+            "{keyword}에 대해 더 자세히 알고 싶어요",
+            "{keyword}의 영향은 무엇인가요?",
+            "{keyword}와 관련된 중요 사항은?",
+            "{keyword}에 대한 전문가 의견은?"
+        ]
+        
+        # 5-2. 각 쿼리에 대한 질문 생성
+        final_questions = []
+        
+        for query_data in expanded_queries:
+            # 쿼리 유형에 따라 다른 템플릿 선택
+            if query_data["type"] == "AND":
+                template = "{keyword}에 대해 알려주세요"
+            elif query_data["type"] == "OR":
+                template = "{keyword}의 최근 동향은?"
+            elif query_data["type"] == "NOT":
+                template = "{keyword}에 관한 최신 뉴스는?"
+            else:
+                # 랜덤 템플릿 선택
+                import random
+                template = random.choice(question_templates)
+            
+            # 질문 생성
+            question = template.format(keyword=query_data["description"])
+            
+            # 유니크한 질문인지 확인
+            if not any(q["question"] == question for q in final_questions):
+                query_data["question"] = question
+                final_questions.append(query_data)
+        
+        # 5-3. 질문 점수화 및 정렬
+        # - 기사 수가 많을수록 높은 점수
+        # - 깊이가 낮을수록 높은 점수
+        for q in final_questions:
+            # 기사 수 정규화 (로그 스케일)
+            article_score = np.log1p(q["article_count"]) / 10  # 0~1 범위로 정규화
+            
+            # 깊이 역수 (깊이가 낮을수록 높은 점수)
+            depth_score = 1.0 / (q["depth"] + 1)
+            
+            # 최종 점수
+            q["score"] = (0.7 * article_score) + (0.3 * depth_score)
+        
+        # 점수 기준 정렬
+        final_questions.sort(key=lambda x: x["score"], reverse=True)
+        
+        # 최종 결과 형식 정리
+        result_questions = []
+        for idx, q in enumerate(final_questions[:max_questions]):
+            result_questions.append({
+                "id": idx + 1,
+                "question": q["question"],
+                "query": q["query"],
+                "count": q["article_count"],
+                "score": q["score"],
+                "description": q["description"]
+            })
+        
+        self.logger.info(f"'{keyword}' 키워드 관련 질문 {len(result_questions)}개 생성 완료")
+        return result_questions 

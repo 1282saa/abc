@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { containerVariants, itemVariants } from "../animations/pageAnimations";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import ErrorMessage from "../components/common/ErrorMessage";
@@ -42,185 +42,59 @@ const Tab: React.FC<TabProps> = ({ label, isActive, onClick }) => (
   </button>
 );
 
-const NewsDetailModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  article: NewsItem | null;
-}> = ({ isOpen, onClose, article }) => {
-  const [content, setContent] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && article && article.id && !content) {
-      setIsLoading(true);
-      fetch(`/api/news/detail/${article.id}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.news && data.news.content) {
-            setContent(data.news.content);
-          }
-        })
-        .catch((err) => {
-          console.error("뉴스 본문 조회 실패:", err);
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    }
-  }, [isOpen, article, content]);
-
-  if (!isOpen || !article) return null;
-
-  return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">{article.title}</h2>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-            <div className="flex items-center gap-2">
-              <span className="font-medium">{article.provider}</span>
-            </div>
-            <span>
-              {article.published_at || article.date || "날짜 정보 없음"}
-            </span>
-          </div>
-
-          {isLoading ? (
-            <div className="text-center py-8">
-              <LoadingSpinner />
-              <p className="mt-4 text-gray-600">본문을 불러오는 중입니다...</p>
-            </div>
-          ) : content ? (
-            <div className="prose dark:prose-invert max-w-none">
-              <div className="whitespace-pre-line">{content}</div>
-            </div>
-          ) : article.summary ? (
-            <div className="prose dark:prose-invert max-w-none">
-              <div className="whitespace-pre-line">{article.summary}</div>
-              <p className="text-gray-500 mt-4 italic">
-                전체 본문을 불러올 수 없습니다.
-              </p>
-            </div>
-          ) : (
-            <p className="text-gray-500 italic">본문 내용이 없습니다.</p>
-          )}
-
-          {article.url && (
-            <div className="mt-6 text-right">
-              <a
-                href={article.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-              >
-                원문 보기
-                <svg
-                  className="w-4 h-4 ml-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                  />
-                </svg>
-              </a>
-            </div>
-          )}
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
-  );
-};
-
 const NewsCard: React.FC<{ item: NewsItem }> = ({ item }) => {
-  const [showDetailModal, setShowDetailModal] = useState(false);
+  const navigate = useNavigate();
+
+  const handleCardClick = () => {
+    // 모달 대신 페이지 이동 방식 사용
+    if (item.id) {
+      navigate(`/news/${item.id}`);
+    }
+  };
 
   return (
-    <>
-      <motion.div
-        variants={itemVariants}
-        whileHover={{ scale: 1.02 }}
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-all cursor-pointer"
-        onClick={() => setShowDetailModal(true)}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">
-            {item.provider}
-          </span>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {item.date}
-          </span>
-        </div>
+    <motion.div
+      variants={itemVariants}
+      whileHover={{ scale: 1.02 }}
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 hover:shadow-lg transition-all cursor-pointer"
+      onClick={handleCardClick}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">
+          {item.provider}
+        </span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {item.date}
+        </span>
+      </div>
 
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 line-clamp-2">
-          {item.title}
-        </h3>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 line-clamp-2">
+        {item.title}
+      </h3>
 
-        {item.summary && (
-          <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
-            {item.summary}
-          </p>
-        )}
+      {item.summary && (
+        <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-3">
+          {item.summary}
+        </p>
+      )}
 
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-            {item.category}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDetailModal(true);
-            }}
-            className="text-primary-600 dark:text-primary-400 text-sm hover:underline"
-          >
-            본문 보기 →
-          </button>
-        </div>
-      </motion.div>
-
-      <NewsDetailModal
-        isOpen={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        article={item}
-      />
-    </>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+          {item.category}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (item.id) {
+              navigate(`/news/${item.id}`);
+            }
+          }}
+          className="text-primary-600 dark:text-primary-400 text-sm hover:underline"
+        >
+          본문 보기 →
+        </button>
+      </div>
+    </motion.div>
   );
 };
 

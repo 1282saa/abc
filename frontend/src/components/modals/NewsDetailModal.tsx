@@ -1,6 +1,8 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import LoadingSpinner from "../common/LoadingSpinner";
+import RelatedQuestionsCard from "../news/RelatedQuestionsCard";
+import { getRelatedQuestions, RelatedQuestion } from "../../services/api";
 
 interface NewsArticle {
   id: string;
@@ -19,25 +21,35 @@ interface NewsDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   article: NewsArticle | null;
+  onSearch?: (query: string, title?: string) => void;
 }
 
 const NewsDetailModal: React.FC<NewsDetailModalProps> = ({
   isOpen,
   onClose,
   article,
+  onSearch,
 }) => {
-  // 기사가 없거나 모달이 닫혀있으면 렌더링하지 않음
-  if (!isOpen || !article) return null;
+  const [relatedQuestions, setRelatedQuestions] = useState<RelatedQuestion[]>(
+    []
+  );
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
 
   // 전체 내용 가져오기
   const fetchFullContent = async () => {
-    if (!article.content && article.id) {
+    if (article && !article.content && article.id) {
       try {
         const response = await fetch(`/api/news/detail/${article.id}`);
         if (response.ok) {
           const data = await response.json();
           if (data.news && data.news.content) {
-            article.content = data.news.content;
+            // 불변성 유지를 위해 새 객체 생성
+            const updatedArticle = {
+              ...article,
+              content: data.news.content,
+            };
+            // 여기서 article을 직접 업데이트할 수 없으므로
+            // 부모 컴포넌트에서 article 상태를 업데이트하는 콜백이 필요할 수 있습니다
           }
         }
       } catch (error) {
@@ -46,12 +58,49 @@ const NewsDetailModal: React.FC<NewsDetailModalProps> = ({
     }
   };
 
-  // 모달이 열리면 내용 가져오기
+  // 연관 질문 가져오기
+  const fetchRelatedQuestions = async () => {
+    if (article && article.title) {
+      try {
+        setIsLoadingQuestions(true);
+
+        // 제목에서 키워드 추출 (간단히 첫 3단어만 사용)
+        const titleWords = article.title.split(" ");
+        const keyword = titleWords.slice(0, 3).join(" ");
+
+        const response = await getRelatedQuestions(keyword);
+        setRelatedQuestions(response.questions || []);
+      } catch (error) {
+        console.error("연관 질문 조회 실패:", error);
+        setRelatedQuestions([]);
+      } finally {
+        setIsLoadingQuestions(false);
+      }
+    }
+  };
+
+  // 질문 클릭 핸들러
+  const handleQuestionClick = (query: string, question: string) => {
+    onClose(); // 모달 닫기
+    if (onSearch) {
+      onSearch(query, question); // 검색 실행
+    }
+  };
+
+  // 모달이 열리면 내용과 연관 질문 가져오기
   useEffect(() => {
-    if (isOpen && article && !article.content) {
-      fetchFullContent();
+    if (isOpen && article) {
+      if (!article.content) {
+        fetchFullContent();
+      }
+      fetchRelatedQuestions();
     }
   }, [isOpen, article]);
+
+  // 기사가 없거나 모달이 닫혀있으면 아무것도 렌더링하지 않음
+  if (!isOpen || !article) {
+    return null;
+  }
 
   return (
     <AnimatePresence>
@@ -109,6 +158,15 @@ const NewsDetailModal: React.FC<NewsDetailModalProps> = ({
               <p className="mt-4 text-gray-600">본문을 불러오는 중입니다...</p>
             </div>
           )}
+
+          {/* 연관 질문 섹션 */}
+          <div className="mt-8 border-t pt-4">
+            <RelatedQuestionsCard
+              questions={relatedQuestions}
+              onQuestionClick={handleQuestionClick}
+              isLoading={isLoadingQuestions}
+            />
+          </div>
 
           {article.url && (
             <div className="mt-6 text-right">

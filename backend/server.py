@@ -29,7 +29,7 @@ from backend.api.routes.latest_news_routes import router as latest_news_router
 # TODO: 다음 분리된 라우터들도 추가
 # from backend.api.routes.company_news_routes import router as company_news_router
 # from backend.api.routes.search_routes import router as search_routes_router
-# from backend.api.routes.related_questions_routes import router as related_questions_router
+from backend.api.routes.related_questions_routes import router as related_questions_router
 # from backend.api.routes.ai_summary_routes import router as ai_summary_router
 # from backend.api.routes.watchlist_routes import router as watchlist_router
 
@@ -65,7 +65,7 @@ app.include_router(latest_news_router)
 # TODO: 분리된 라우터들도 추가
 # app.include_router(company_news_router)
 # app.include_router(search_routes_router)
-# app.include_router(related_questions_router)
+app.include_router(related_questions_router)
 # app.include_router(ai_summary_router)
 # app.include_router(watchlist_router)
 

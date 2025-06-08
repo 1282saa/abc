@@ -7,20 +7,7 @@ import ErrorMessage from "../components/common/ErrorMessage";
 import RelatedQuestions from "../components/common/RelatedQuestions";
 import NewsArticleCard from "../components/news/NewsArticleCard";
 import SearchForm from "../components/forms/SearchForm";
-import NewsDetailModal from "../components/modals/NewsDetailModal";
-
-interface NewsArticle {
-  id: string;
-  title: string;
-  summary: string;
-  content?: string;
-  provider: string;
-  url: string;
-  category: string;
-  byline: string;
-  images: string[];
-  published_at?: string;
-}
+import { NewsArticle } from "../services/api";
 
 interface Question {
   question: string;
@@ -39,10 +26,6 @@ const SearchPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [totalResults, setTotalResults] = useState(0);
   const [currentQuery, setCurrentQuery] = useState(query);
-  const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(
-    null
-  );
-  const [showDetailModal, setShowDetailModal] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
 
   // 검색 실행
@@ -140,12 +123,6 @@ const SearchPage: React.FC = () => {
     });
   };
 
-  // 기사 상세 보기
-  const handleArticleClick = (article: NewsArticle) => {
-    setSelectedArticle(article);
-    setShowDetailModal(true);
-  };
-
   return (
     <motion.div
       initial="hidden"
@@ -198,7 +175,7 @@ const SearchPage: React.FC = () => {
                 <NewsArticleCard
                   key={article.id}
                   article={article}
-                  onClick={() => handleArticleClick(article)}
+                  useNavigationInsteadOfModal={true}
                 />
               ))}
             </div>
@@ -214,13 +191,6 @@ const SearchPage: React.FC = () => {
           )}
         </motion.div>
       )}
-
-      {/* 뉴스 상세 모달 */}
-      <NewsDetailModal
-        isOpen={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        article={selectedArticle}
-      />
     </motion.div>
   );
 };

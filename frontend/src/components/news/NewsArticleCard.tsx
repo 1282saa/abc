@@ -1,24 +1,14 @@
 import React from "react";
 import { motion } from "framer-motion";
-
-interface NewsArticle {
-  id: string;
-  title: string;
-  summary: string;
-  content?: string;
-  provider: string;
-  url?: string;
-  category?: string;
-  byline?: string;
-  images?: string[];
-  published_at?: string;
-}
+import { useNavigate } from "react-router-dom";
+import { NewsArticle } from "../../services/api";
 
 interface NewsArticleCardProps {
   article: NewsArticle;
   onClick?: () => void;
   className?: string;
   showImage?: boolean;
+  useNavigationInsteadOfModal?: boolean;
 }
 
 const NewsArticleCard: React.FC<NewsArticleCardProps> = ({
@@ -26,16 +16,24 @@ const NewsArticleCard: React.FC<NewsArticleCardProps> = ({
   onClick,
   className = "",
   showImage = true,
+  useNavigationInsteadOfModal = true,
 }) => {
+  const navigate = useNavigate();
   const hasImage = showImage && article.images && article.images.length > 0;
+
+  const handleClick = () => {
+    if (useNavigationInsteadOfModal) {
+      navigate(`/news/${article.id}`);
+    } else if (onClick) {
+      onClick();
+    }
+  };
 
   return (
     <motion.div
       whileHover={{ scale: 1.01 }}
-      className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-all border border-gray-200 dark:border-gray-700 overflow-hidden ${className} ${
-        onClick ? "cursor-pointer" : ""
-      }`}
-      onClick={onClick}
+      className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-all border border-gray-200 dark:border-gray-700 overflow-hidden ${className} cursor-pointer`}
+      onClick={handleClick}
     >
       <div className={`p-4 ${hasImage ? "flex items-start gap-4" : ""}`}>
         {hasImage && article.images && (

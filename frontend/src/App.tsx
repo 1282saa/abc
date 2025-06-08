@@ -8,6 +8,7 @@ import StockCalendarPage from "./pages/StockCalendarPage";
 import WatchlistPage from "./pages/WatchlistPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import SearchPage from "./pages/SearchPage";
+import NewsDetailPage from "./pages/NewsDetailPage";
 
 // 다크모드 설정
 type Theme = "light" | "dark";
@@ -48,6 +49,7 @@ const App: React.FC = () => {
         <Route path="/watchlist" element={<WatchlistPage />} />
         <Route path="/stock-calendar" element={<StockCalendarPage />} />
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/news/:newsId" element={<NewsDetailPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </Layout>

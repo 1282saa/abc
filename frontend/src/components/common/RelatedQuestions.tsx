@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import LoadingSpinner from "./LoadingSpinner";
+import { getRelatedQuestions, RelatedQuestion } from "../../services/api";
 
 interface Question {
   question: string;
@@ -33,24 +34,33 @@ const RelatedQuestions: React.FC<RelatedQuestionsProps> = ({
       setError(null);
 
       try {
-        const response = await fetch(
-          `/api/news/related-questions/${encodeURIComponent(
-            keyword
-          )}?max_questions=${maxQuestions}`
+        const response = await getRelatedQuestions(
+          keyword,
+          undefined,
+          undefined,
+          maxQuestions
         );
 
-        if (!response.ok) {
-          throw new Error("연관 질문을 가져오는데 실패했습니다");
-        }
+        if (
+          response.success &&
+          response.questions &&
+          response.questions.length > 0
+        ) {
+          const mappedQuestions = response.questions.map((q) => ({
+            question: q.question,
+            query: q.query,
+            type: q.query.includes(" NOT ")
+              ? "exclude"
+              : q.query.includes(" OR ")
+              ? "expand"
+              : "refine",
+          }));
 
-        const data = await response.json();
-
-        if (data.success && data.questions && data.questions.length > 0) {
-          setQuestions(data.questions);
+          setQuestions(mappedQuestions);
         } else {
           setQuestions([]);
-          if (!data.success) {
-            setError(data.error || "연관 질문을 생성할 수 없습니다");
+          if (!response.success) {
+            setError("연관 질문을 생성할 수 없습니다");
           }
         }
       } catch (err) {

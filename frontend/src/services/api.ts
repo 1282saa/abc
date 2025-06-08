@@ -181,6 +181,28 @@ export interface StockCalendarResponse {
   }>;
 }
 
+// 관련 질문 인터페이스
+export interface RelatedQuestion {
+  id: number;
+  question: string;
+  query: string;
+  count: number;
+  score: number;
+  description: string;
+}
+
+// 관련 질문 응답 인터페이스
+export interface RelatedQuestionsResponse {
+  success: boolean;
+  keyword: string;
+  period: {
+    from: string;
+    to: string;
+  };
+  total_count: number;
+  questions: RelatedQuestion[];
+}
+
 // News API 서비스 객체
 const newsApiService = {
   /**
@@ -360,6 +382,43 @@ const newsApiService = {
 
     return response.json();
   },
+
+  /**
+   * 연관 질문 조회
+   */
+  async getRelatedQuestions(
+    keyword: string,
+    dateFrom?: string,
+    dateTo?: string,
+    maxQuestions: number = 10
+  ): Promise<RelatedQuestionsResponse> {
+    const params = new URLSearchParams({
+      keyword,
+      max_questions: maxQuestions.toString(),
+    });
+
+    if (dateFrom) {
+      params.append("date_from", dateFrom);
+    }
+
+    if (dateTo) {
+      params.append("date_to", dateTo);
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/related-questions?${params}`,
+      {
+        ...defaultOptions,
+        method: "GET",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
 };
 
 export default newsApiService;
@@ -374,4 +433,5 @@ export const {
   getWatchlistSuggestions,
   searchNews,
   getStockCalendarEvents,
+  getRelatedQuestions,
 } = newsApiService;
