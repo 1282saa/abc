@@ -96,6 +96,7 @@ async def get_latest_news(
                             if keyword:
                                 # 최근 7일간 해당 키워드로 뉴스 검색 (datetime은 모듈 상단에서 import됨)
                                 date_from = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+                                # BigKinds API에서 사용되므로 클라이언트가 자동으로 +1일 처리
                                 date_to = datetime.now().strftime("%Y-%m-%d")
                                 
                                 kw_res = bigkinds_client.search_news(

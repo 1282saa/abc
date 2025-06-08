@@ -157,7 +157,8 @@ class BigKindsClient:
         if not date_from:
             date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         if not date_to:
-            date_to = datetime.now().strftime("%Y-%m-%d")
+            # BigKinds API의 until은 exclusive이므로 하루 더 추가
+            date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         
         # 기본 필드 설정
         if not fields:
@@ -251,6 +252,7 @@ class BigKindsClient:
         if not date_from:
             date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         if not date_to:
+            # BigKinds API의 date_to는 inclusive이므로 오늘 날짜 사용
             date_to = datetime.now().strftime("%Y-%m-%d")
             
         params = {
@@ -293,6 +295,7 @@ class BigKindsClient:
         if not date_from:
             date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         if not date_to:
+            # BigKinds API의 date_to는 inclusive이므로 오늘 날짜 사용
             date_to = datetime.now().strftime("%Y-%m-%d")
             
         params = {
@@ -329,7 +332,8 @@ class BigKindsClient:
         start_date = end_date - timedelta(days=days)
         
         from_date = start_date.strftime("%Y-%m-%d")
-        until_date = end_date.strftime("%Y-%m-%d")
+        # BigKinds API의 until은 exclusive이므로 하루 더 추가
+        until_date = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
         
         # 빅카인즈 query_rank API 파라미터 구조
         argument = {
