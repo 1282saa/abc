@@ -210,7 +210,7 @@ class BigKindsClient:
         Returns:
             이슈 랭킹 정보
         """
-        endpoint = "issue_ranking"
+        endpoint = "issue/ranking"
         
         # 날짜 기본값 설정
         if not date:
@@ -339,7 +339,7 @@ class BigKindsClient:
         argument = {
             "from": from_date,
             "until": until_date,
-            "limit": limit
+            "offset": limit
         }
         
         self.logger.info(f"인기 키워드 요청 - from: {from_date}, until: {until_date}, limit: {limit}")
@@ -418,6 +418,13 @@ class BigKindsClient:
         Returns:
             기업 뉴스 검색 결과
         """
+        # 날짜 기본값 설정
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            # BigKinds API의 until은 exclusive이므로 하루 더 추가
+            date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
         # 기업명으로 검색, 모든 언론사 대상
         return self.search_news(
             query=company_name,
@@ -455,6 +462,13 @@ class BigKindsClient:
         Returns:
             키워드 관련 뉴스 검색 결과
         """
+        # 날짜 기본값 설정
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            # BigKinds API의 until은 exclusive이므로 하루 더 추가
+            date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            
         # 키워드로 검색, 모든 언론사 대상
         return self.search_news(
             query=keyword,
@@ -510,11 +524,27 @@ class BigKindsClient:
         Returns:
             일자별 뉴스 목록
         """
+        # 날짜 기본값 설정
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        
+        # date_to 처리
+        if date_to:
+            # 사용자가 직접 지정한 경우, +1일 추가 (exclusive 처리)
+            try:
+                dt_to = datetime.strptime(date_to, "%Y-%m-%d")
+                adjusted_date_to = (dt_to + timedelta(days=1)).strftime("%Y-%m-%d")
+            except ValueError:
+                adjusted_date_to = date_to
+        else:
+            # 기본값으로 오늘+1일 설정
+            adjusted_date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            
         # 키워드로 뉴스 검색
         news_response = self.get_keyword_news(
             keyword=keyword,
             date_from=date_from,
-            date_to=date_to,
+            date_to=adjusted_date_to,  # 조정된 값 사용
             return_size=return_size
         )
         
@@ -543,12 +573,15 @@ class BigKindsClient:
                 "count": len(timeline[date_str])
             })
         
+        # UI 표시용 date_to (원래 값 사용)
+        display_date_to = date_to or datetime.now().strftime("%Y-%m-%d")
+            
         return {
             "success": True,
             "keyword": keyword,
             "period": {
                 "from": date_from,
-                "to": date_to
+                "to": display_date_to
             },
             "total_count": len(formatted_response.get("documents", [])),
             "timeline": sorted_timeline
@@ -572,11 +605,27 @@ class BigKindsClient:
         Returns:
             일자별 뉴스 목록
         """
+        # 날짜 기본값 설정
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        
+        # date_to 처리
+        if date_to:
+            # 사용자가 직접 지정한 경우, +1일 추가 (exclusive 처리)
+            try:
+                dt_to = datetime.strptime(date_to, "%Y-%m-%d")
+                adjusted_date_to = (dt_to + timedelta(days=1)).strftime("%Y-%m-%d")
+            except ValueError:
+                adjusted_date_to = date_to
+        else:
+            # 기본값으로 오늘+1일 설정
+            adjusted_date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            
         # 기업 관련 뉴스 검색
         news_response = self.get_company_news(
             company_name=company_name,
             date_from=date_from,
-            date_to=date_to,
+            date_to=adjusted_date_to,  # 조정된 값 사용
             return_size=return_size
         )
         
@@ -605,12 +654,15 @@ class BigKindsClient:
                 "count": len(timeline[date_str])
             })
         
+        # UI 표시용 date_to (원래 값 사용)
+        display_date_to = date_to or datetime.now().strftime("%Y-%m-%d")
+            
         return {
             "success": True,
             "company": company_name,
             "period": {
                 "from": date_from,
-                "to": date_to
+                "to": display_date_to
             },
             "total_count": len(formatted_response.get("documents", [])),
             "timeline": sorted_timeline
@@ -637,7 +689,8 @@ class BigKindsClient:
         start_date = end_date - timedelta(days=days)
         
         date_from = start_date.strftime("%Y-%m-%d")
-        date_to = end_date.strftime("%Y-%m-%d")
+        # BigKinds API의 until은 exclusive이므로 하루 더 추가
+        date_to = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
         
         # 기업 뉴스 검색
         search_result = self.get_company_news(
@@ -682,10 +735,11 @@ class BigKindsClient:
         ref_date = datetime.strptime(reference_date, "%Y-%m-%d")
         
         # 레포트 타입에 따른 기간 설정
-        date_to = ref_date.strftime("%Y-%m-%d")
+        # BigKinds API의 until은 exclusive이므로 하루 더 추가
+        date_to = (ref_date + timedelta(days=1)).strftime("%Y-%m-%d")
         
         if report_type == "daily":
-            date_from = date_to
+            date_from = ref_date.strftime("%Y-%m-%d")
             report_type_kr = "일일"
             limit = 20  # 하루 기사는 많지 않을 것으로 예상
         elif report_type == "weekly":
