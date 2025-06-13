@@ -6,6 +6,8 @@ import Layout from "./components/layout/Layout";
 import HomePage from "./pages/HomePage";
 import StockCalendarPage from "./pages/StockCalendarPage";
 import WatchlistPage from "./pages/WatchlistPage";
+import CategoryDetailPage from "./pages/CategoryDetailPage";
+import ReportPage from "./pages/ReportPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import SearchPage from "./pages/SearchPage";
 import NewsDetailPage from "./pages/NewsDetailPage";
@@ -47,7 +49,9 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />
+        <Route path="/category/:categoryKey" element={<CategoryDetailPage />} />
         <Route path="/stock-calendar" element={<StockCalendarPage />} />
+        <Route path="/report" element={<ReportPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/news/:newsId" element={<NewsDetailPage />} />
         <Route path="*" element={<NotFoundPage />} />

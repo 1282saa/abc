@@ -306,7 +306,7 @@ const HomePage: React.FC = () => {
         className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8"
       >
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-          📊 최신 뉴스 대시보드
+          최신 뉴스 대시보드
         </h2>
 
         {/* 탭 네비게이션 */}

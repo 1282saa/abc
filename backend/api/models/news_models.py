@@ -30,5 +30,4 @@ class KeywordNewsRequest(BaseModel):
 
 class AISummaryRequest(BaseModel):
     """AI 요약 요청 모델"""
-    news_ids: List[str] = Field(..., description="요약할 뉴스 ID 리스트 (최대 5개)", max_items=5)
-    summary_type: str = Field(..., description="요약 유형", pattern="^(issue|quote|data)$") 
+    news_ids: List[str] = Field(..., description="요약할 뉴스 ID 리스트 (최대 5개)", max_items=5) 

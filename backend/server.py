@@ -7,10 +7,13 @@ FastAPI 기반 뉴스 질의응답 시스템 API 서버를 제공합니다.
 import os
 import sys
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from dotenv import load_dotenv
+from fastapi.responses import JSONResponse
+import logging
+import httpx
 
 # 프로젝트 루트 디렉토리 찾기
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -25,11 +28,12 @@ from backend.api.routes.stock_calendar_routes import router as stock_calendar_ro
 from backend.api.routes.news_routes import router as news_router
 
 # 분리된 새 라우터들
-from backend.api.routes.latest_news_routes import router as latest_news_router
 # TODO: 다음 분리된 라우터들도 추가
 # from backend.api.routes.company_news_routes import router as company_news_router
 # from backend.api.routes.search_routes import router as search_routes_router
 from backend.api.routes.related_questions_routes import router as related_questions_router
+from backend.api.routes.proxy_routes import router as proxy_routes
+from backend.api.routes.entity_routes import router as entity_router
 # from backend.api.routes.ai_summary_routes import router as ai_summary_router
 # from backend.api.routes.watchlist_routes import router as watchlist_router
 
@@ -61,13 +65,23 @@ app.include_router(stock_calendar_router)
 app.include_router(news_router)
 
 # 분리된 새 라우터들 등록
-app.include_router(latest_news_router)
 # TODO: 분리된 라우터들도 추가
 # app.include_router(company_news_router)
 # app.include_router(search_routes_router)
 app.include_router(related_questions_router)
+app.include_router(proxy_routes)
+app.include_router(entity_router)
 # app.include_router(ai_summary_router)
 # app.include_router(watchlist_router)
+
+# 예외 처리기
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception occurred")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "message": str(exc)},
+    )
 
 @app.get("/api/health")
 async def health_check():

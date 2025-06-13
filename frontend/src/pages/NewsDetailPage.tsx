@@ -20,6 +20,8 @@ interface NewsArticle {
 interface CustomQuestion {
   id: string;
   question: string;
+  query: string;
+  type: string;
 }
 
 interface RelatedArticle {
@@ -27,43 +29,8 @@ interface RelatedArticle {
   title: string;
   provider: string;
   published_at?: string;
+  summary?: string;
 }
-
-const CUSTOM_QUESTIONS: CustomQuestion[] = [
-  { id: "q1", question: "이 기사와 관련된 주요 이슈는 무엇인가요?" },
-  { id: "q2", question: "해당 기업의 미래 전망은 어떤가요?" },
-  { id: "q3", question: "이 뉴스가 시장에 미치는 영향은?" },
-  { id: "q4", question: "유사한 사례가 과거에 있었나요?" },
-  { id: "q5", question: "전문가들의 의견은 어떤가요?" },
-];
-
-// 더미 관련 기사 데이터
-const DUMMY_RELATED_ARTICLES: RelatedArticle[] = [
-  {
-    id: "rel1",
-    title: "삼성전자, 신규 반도체 라인 증설 계획 발표",
-    provider: "서울경제",
-    published_at: "2023-06-01",
-  },
-  {
-    id: "rel2",
-    title: "글로벌 반도체 시장, 2025년까지 성장세 지속 전망",
-    provider: "한국경제",
-    published_at: "2023-05-28",
-  },
-  {
-    id: "rel3",
-    title: "반도체 산업 인력난 심화...정부 대책 마련 나서",
-    provider: "매일경제",
-    published_at: "2023-05-25",
-  },
-  {
-    id: "rel4",
-    title: "삼성전자-SK하이닉스, 반도체 기술 협력 논의",
-    provider: "전자신문",
-    published_at: "2023-05-20",
-  },
-];
 
 const NewsDetailPage: React.FC = () => {
   const { newsId } = useParams<{ newsId: string }>();
@@ -73,6 +40,9 @@ const NewsDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<string | null>(null);
   const [relatedArticles, setRelatedArticles] = useState<RelatedArticle[]>([]);
+  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [loadingRelated, setLoadingRelated] = useState(false);
 
   useEffect(() => {
     const fetchArticleDetail = async () => {
@@ -92,7 +62,7 @@ const NewsDetailPage: React.FC = () => {
         );
 
         // 임시로 더미 데이터 설정 (API가 없는 경우)
-        const dummyContent = `최근 조직 내부를 뒤흔든 삼성전자(005930) 내 최대 노조인 전국삼성전자노동조합(전삼노) 집행부가 임기 9개월가량을 남기고 전원 사임했다. 집행부 공백 등 불안정한 노조 내부 사정에 따라 노사가 테스크포스(TF)를 통해 이달까지 마련하기로 한 상반기 제도 및 복리후생 개선안 도출에도 차질이 빚였다.
+        const dummyContent = `최근 조직 내부를 뒤흔든 삼성전자(005930) 내 최대 노조인 전국삼성전자노동조합(전삼노) 집행부가 임기 9개월가량을 남기고 전원 사임했다.
 
 8일 업계에 따르면 순우룡 전삼노 3기 위원장은 4일 조합 플랫폼에서 '3기 임원 사임 입장문'을 게재하고 "임원 전원은 오늘부로 임기를 조기에 마무리하고 사임하기로 결정했다"며 "내년 임금 교섭 및 제4기 위원장 선거 일정이 겹치는 상황에서 새로운 집행부가 충분한 준비를 할 수 있도록 책임 있게 물러나기로 했다"고 밝혔다.
 
@@ -127,13 +97,124 @@ const NewsDetailPage: React.FC = () => {
     fetchArticleDetail();
   }, [newsId]);
 
-  // 맞춤형 질문 클릭 시 연관 기사 표시
-  const handleQuestionClick = (questionId: string) => {
-    setSelectedQuestion(questionId);
+  // 기사 로드 후 관련 키워드 추출 및 질문 가져오기
+  useEffect(() => {
+    const fetchRelatedQuestions = async () => {
+      if (!article) return;
 
-    // 실제로는 API를 호출하여 연관 기사를 가져와야 함
-    // 현재는 더미 데이터 사용
-    setRelatedArticles(DUMMY_RELATED_ARTICLES);
+      setLoadingQuestions(true);
+      try {
+        // 제목과 요약에서 키워드 추출 (간단한 구현)
+        // 실제로는 명사 추출 등 더 정교한 방법을 사용해야 함
+        const keywords = article.title.split(" ");
+        const mainKeyword =
+          article.category === "기업"
+            ? keywords.find(
+                (k) => k.length > 1 && !k.match(/[^가-힣a-zA-Z0-9]/)
+              ) || "기업"
+            : keywords[0] || "뉴스";
+
+        // 연관 질문 API 호출 (v2 엔드포인트 사용)
+        const response = await fetch(
+          `/api/related-questions/v2?keyword=${encodeURIComponent(mainKeyword)}`
+        );
+        if (!response.ok) {
+          throw new Error("관련 질문을 불러오는데 실패했습니다");
+        }
+
+        const data = await response.json();
+        if (data.success && data.questions && data.questions.length > 0) {
+          // ID 필드 추가
+          const questionsWithId = data.questions.map((q: any, idx: number) => ({
+            ...q,
+            id: `q${idx + 1}`,
+          }));
+          setCustomQuestions(questionsWithId);
+        } else {
+          // API 결과가 없는 경우 기본 질문 설정
+          setCustomQuestions([
+            {
+              id: "q1",
+              question: "이 기사와 관련된 주요 이슈는 무엇인가요?",
+              query: mainKeyword,
+              type: "basic",
+            },
+            {
+              id: "q2",
+              question: "해당 기업의 미래 전망은 어떤가요?",
+              query: `${mainKeyword} 전망`,
+              type: "refine",
+            },
+            {
+              id: "q3",
+              question: "이 뉴스가 시장에 미치는 영향은?",
+              query: `${mainKeyword} 영향`,
+              type: "refine",
+            },
+          ]);
+        }
+      } catch (err) {
+        console.error("관련 질문 로딩 오류:", err);
+        // 오류 시 기본 질문 설정
+        setCustomQuestions([
+          {
+            id: "q1",
+            question: "이 기사와 관련된 주요 이슈는 무엇인가요?",
+            query: "관련 이슈",
+            type: "basic",
+          },
+          {
+            id: "q2",
+            question: "해당 기업의 미래 전망은 어떤가요?",
+            query: "미래 전망",
+            type: "basic",
+          },
+        ]);
+      } finally {
+        setLoadingQuestions(false);
+      }
+    };
+
+    fetchRelatedQuestions();
+  }, [article]);
+
+  // 맞춤형 질문 클릭 시 연관 기사 표시
+  const handleQuestionClick = async (questionId: string) => {
+    setSelectedQuestion(questionId);
+    setLoadingRelated(true);
+
+    try {
+      const selectedQ = customQuestions.find((q) => q.id === questionId);
+      if (!selectedQ) return;
+
+      // 선택한 질문의 query로 뉴스 검색 API 호출
+      const response = await fetch(
+        `/api/news/search?query=${encodeURIComponent(selectedQ.query)}&limit=5`
+      );
+      if (!response.ok) {
+        throw new Error("관련 기사를 불러오는데 실패했습니다");
+      }
+
+      const data = await response.json();
+      if (data.success && data.documents) {
+        setRelatedArticles(
+          data.documents.map((doc: any) => ({
+            id: doc.id,
+            title: doc.title,
+            provider: doc.provider,
+            published_at: doc.published_at,
+            summary: doc.summary,
+          }))
+        );
+      } else {
+        setRelatedArticles([]);
+      }
+    } catch (err) {
+      console.error("관련 기사 로딩 오류:", err);
+      setRelatedArticles([]);
+    } finally {
+      setLoadingRelated(false);
+    }
   };
 
   // 연관 기사 클릭 시 해당 기사로 이동
@@ -280,21 +361,50 @@ const NewsDetailPage: React.FC = () => {
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 다음 질문들을 클릭하면 관련 기사를 확인할 수 있습니다.
               </p>
-              <div className="space-y-2">
-                {CUSTOM_QUESTIONS.map((q) => (
-                  <div
-                    key={q.id}
-                    onClick={() => handleQuestionClick(q.id)}
-                    className={`p-3 rounded-lg cursor-pointer transition-all ${
-                      selectedQuestion === q.id
-                        ? "bg-primary-50 dark:bg-primary-900/30 border-l-4 border-primary-500"
-                        : "bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    }`}
-                  >
-                    <p className="font-medium">{q.question}</p>
-                  </div>
-                ))}
-              </div>
+
+              {loadingQuestions ? (
+                <div className="flex justify-center py-6">
+                  <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {customQuestions.map((q) => (
+                    <div
+                      key={q.id}
+                      onClick={() => handleQuestionClick(q.id)}
+                      className={`p-3 rounded-lg cursor-pointer transition-all ${
+                        selectedQuestion === q.id
+                          ? "bg-primary-50 dark:bg-primary-900/30 border-l-4 border-primary-500"
+                          : "bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      }`}
+                    >
+                      <p className="font-medium">{q.question}</p>
+                      {q.type && (
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block
+                          ${
+                            q.type === "refine"
+                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                              : q.type === "expand"
+                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                              : q.type === "exclude"
+                              ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                              : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                          }`}
+                        >
+                          {q.type === "refine"
+                            ? "AND"
+                            : q.type === "expand"
+                            ? "OR"
+                            : q.type === "exclude"
+                            ? "NOT"
+                            : "BASIC"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
 
             {selectedQuestion && (
@@ -321,7 +431,12 @@ const NewsDetailPage: React.FC = () => {
                   </svg>
                   연관 기사
                 </h2>
-                {relatedArticles.length > 0 ? (
+
+                {loadingRelated ? (
+                  <div className="flex justify-center py-6">
+                    <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : relatedArticles.length > 0 ? (
                   <div className="space-y-3">
                     {relatedArticles.map((article) => (
                       <div
@@ -330,16 +445,27 @@ const NewsDetailPage: React.FC = () => {
                         className="p-3 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
                       >
                         <h3 className="font-medium mb-1">{article.title}</h3>
+                        {article.summary && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
+                            {article.summary}
+                          </p>
+                        )}
                         <div className="flex justify-between text-xs text-gray-500">
                           <span>{article.provider}</span>
-                          <span>{article.published_at}</span>
+                          <span>
+                            {article.published_at
+                              ? new Date(
+                                  article.published_at
+                                ).toLocaleDateString("ko-KR")
+                              : ""}
+                          </span>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <p className="text-gray-600 dark:text-gray-400">
-                    연관 기사를 불러오는 중입니다...
+                    관련 기사를 찾을 수 없습니다.
                   </p>
                 )}
 

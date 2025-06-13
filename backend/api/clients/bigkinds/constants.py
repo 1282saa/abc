@@ -11,7 +11,11 @@ API_ENDPOINTS = {
     "word_cloud": "word_cloud",
     "time_line": "time_line",
     "quotation_search": "search/quotation",
-    "today_category_keyword": "today_category_keyword"
+    "today_category_keyword": "today_category_keyword",
+    "feature": "feature",
+    "keyword": "keyword",
+    "word_related": "word/related",
+    "word_topn": "word/topn"
 }
 
 # 서울경제신문 관련 설정

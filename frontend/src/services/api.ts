@@ -27,6 +27,7 @@ export interface NewsArticle {
   url: string;
   byline: string;
   images: string[];
+  images_caption?: string;
 }
 
 // 타임라인 항목 인터페이스
@@ -112,7 +113,6 @@ export interface NewsTimelineResponse {
 // AI 요약 요청 인터페이스
 export interface AISummaryRequest {
   news_ids: string[];
-  summary_type: "issue" | "quote" | "data";
 }
 
 // AI 요약 응답 인터페이스
@@ -295,6 +295,79 @@ const newsApiService = {
   },
 
   /**
+   * AI 요약 생성 (스트리밍)
+   */
+  async generateAISummaryStream(
+    request: AISummaryRequest,
+    onProgress: (data: any) => void,
+    onChunk: (chunk: string) => void,
+    onComplete: (result: AISummaryResponse) => void,
+    onError: (error: string) => void
+  ): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/news/ai-summary-stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API 오류: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("스트림 읽기 실패");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.error) {
+                onError(data.error);
+                return;
+              }
+              
+              if (data.step && data.progress) {
+                onProgress(data);
+              }
+              
+              if (data.chunk) {
+                onChunk(data.chunk);
+              }
+              
+              if (data.result) {
+                onComplete(data.result);
+                return;
+              }
+            } catch (e) {
+              console.warn('JSON 파싱 실패:', line);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다");
+    }
+  },
+
+  /**
    * 관심 종목 추천 목록 조회
    */
   async getWatchlistSuggestions(): Promise<WatchlistSuggestionsResponse> {
@@ -430,6 +503,7 @@ export const {
   getKeywordNews,
   getNewsDetail,
   generateAISummary,
+  generateAISummaryStream,
   getWatchlistSuggestions,
   searchNews,
   getStockCalendarEvents,

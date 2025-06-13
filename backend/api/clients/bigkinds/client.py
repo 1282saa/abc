@@ -25,18 +25,80 @@ class BigKindsClient:
         """빅카인즈 API 클라이언트 초기화
         
         Args:
-            api_key: 빅카인즈 API 키
+            api_key: 빅카인즈 API 키 (단일 키 호환성)
             base_url: API 기본 URL
         """
-        self.api_key = api_key or os.environ.get("BIGKINDS_KEY", "")
-        if not self.api_key:
-            raise ValueError("BigKinds API 키가 필요합니다. 환경변수 BIGKINDS_KEY를 설정하세요.")
+        # 다중 API 키 지원
+        self.api_keys = {
+            "general": api_key or os.environ.get("BIGKINDS_KEY_GENERAL", ""),
+            "seoul_economic": os.environ.get("BIGKINDS_KEY_SEOUL", "")
+        }
+        
+        # 하위 호환성을 위한 기본 키 설정
+        self.api_key = api_key or os.environ.get("BIGKINDS_KEY", "") or self.api_keys["general"]
+        
+        # 최소 하나의 API 키는 필요
+        if not any(self.api_keys.values()) and not self.api_key:
+            raise ValueError("BigKinds API 키가 필요합니다. 환경변수 BIGKINDS_KEY_GENERAL 또는 BIGKINDS_KEY를 설정하세요.")
+        
+        # 로깅을 위한 키 상태 확인
+        general_key = self.api_keys["general"] or self.api_key
+        seoul_key = self.api_keys["seoul_economic"]
         
         self.base_url = base_url or API_BASE_URL
         self.logger = setup_logger("api.bigkinds")
         self.timeout = 30
         
-    def _make_request(self, method: str, endpoint: str, argument: Dict[str, Any] = None, params: Dict[str, Any] = None) -> Dict[str, Any]:
+        # API 키 상태 로깅
+        self.logger.info(f"BigKinds API 키 상태 - 일반: {'설정됨' if general_key else '미설정'}, 서울경제: {'설정됨' if seoul_key else '미설정'}")
+        
+    def _get_api_key_for_provider(self, provider: Optional[List[str]] = None) -> str:
+        """언론사에 따른 적절한 API 키 선택
+        
+        Args:
+            provider: 언론사 목록
+            
+        Returns:
+            선택된 API 키
+        """
+        self.logger.info(f"API 키 선택 요청 - provider: {provider}")
+        
+        # 서울경제신문이 포함된 경우 전용 키 사용 (전체 본문 접근 가능)
+        if provider and "서울경제" in provider and self.api_keys["seoul_economic"]:
+            self.logger.info(f"서울경제 전용 API 키 사용: {self.api_keys['seoul_economic'][:8]}...")
+            return self.api_keys["seoul_economic"]
+        
+        # 일반 키 사용 (모든 언론사 접근 가능)
+        general_key = self.api_keys["general"] or self.api_key
+        if general_key:
+            self.logger.info(f"일반 API 키 사용: {general_key[:8]}...")
+            return general_key
+            
+        # 마지막 대안으로 서울경제 키 사용
+        if self.api_keys["seoul_economic"]:
+            self.logger.info(f"대안으로 서울경제 API 키 사용: {self.api_keys['seoul_economic'][:8]}...")
+            return self.api_keys["seoul_economic"]
+            
+        raise ValueError("사용 가능한 API 키가 없습니다.")
+        
+    def _get_api_key_for_general_use(self) -> str:
+        """일반적인 용도 (오늘의 이슈 등)에 사용할 API 키 선택
+        
+        Returns:
+            선택된 API 키
+        """
+        # 일반 키 우선 사용
+        general_key = self.api_keys["general"] or self.api_key
+        if general_key:
+            return general_key
+            
+        # 일반 키가 없으면 서울경제 키 사용
+        if self.api_keys["seoul_economic"]:
+            return self.api_keys["seoul_economic"]
+            
+        raise ValueError("사용 가능한 API 키가 없습니다.")
+        
+    def _make_request(self, method: str, endpoint: str, argument: Dict[str, Any] = None, params: Dict[str, Any] = None, provider: Optional[List[str]] = None) -> Dict[str, Any]:
         """빅카인즈 API 요청 실행
         
         Args:
@@ -44,11 +106,25 @@ class BigKindsClient:
             endpoint: API 엔드포인트
             argument: POST 요청 시 사용할 argument 데이터
             params: GET 요청 시 사용할 쿼리 파라미터
+            provider: 언론사 목록 (API 키 선택용)
             
         Returns:
             API 응답 데이터
         """
-        url = f"{self.base_url}{endpoint}"
+        # 적절한 API 키 선택
+        if provider:
+            api_key = self._get_api_key_for_provider(provider)
+            self.logger.info(f"Provider 기반 API 키 선택: {provider} -> {api_key[:8]}...")
+        else:
+            api_key = self._get_api_key_for_general_use()
+            self.logger.info(f"일반용 API 키 선택: {api_key[:8]}...")
+        # URL 올바르게 구성 (중복 슬래시 방지)
+        if self.base_url.endswith('/') and endpoint.startswith('/'):
+            url = f"{self.base_url}{endpoint[1:]}"
+        elif not self.base_url.endswith('/') and not endpoint.startswith('/'):
+            url = f"{self.base_url}/{endpoint}"
+        else:
+            url = f"{self.base_url}{endpoint}"
         
         # GET 요청 처리 (params 사용)
         if method == "GET" and params:
@@ -57,7 +133,7 @@ class BigKindsClient:
             
             try:
                 # params에 access_key 추가
-                params["access_key"] = self.api_key
+                params["access_key"] = api_key
                 
                 response = requests.get(
                     url,
@@ -82,7 +158,7 @@ class BigKindsClient:
         else:
             # 빅카인즈 가이드라인에 따른 올바른 요청 구조
             request_data = {
-                "access_key": self.api_key,
+                "access_key": api_key,
                 "argument": argument or {}
             }
             
@@ -129,7 +205,7 @@ class BigKindsClient:
         provider: Optional[List[str]] = None,
         category: Optional[List[str]] = None,
         fields: Optional[List[str]] = None,
-        sort_by: str = "date",
+        sort_by: str = "_score",
         sort_order: str = "desc",
         return_from: int = 0,
         return_size: int = 10,
@@ -192,7 +268,7 @@ class BigKindsClient:
         if category:
             argument["category"] = category
         
-        return self._make_request("POST", API_ENDPOINTS["news_search"], argument=argument)
+        return self._make_request("POST", API_ENDPOINTS["news_search"], argument=argument, provider=provider)
     
     def get_issue_ranking(
         self,
@@ -247,7 +323,7 @@ class BigKindsClient:
         Returns:
             연관 키워드 목록
         """
-        endpoint = f"{self.base_url}/word/related"
+        endpoint = API_ENDPOINTS["word_related"]
         
         # 날짜 기본값 설정
         if not date_from:
@@ -263,13 +339,25 @@ class BigKindsClient:
             "date_to": date_to
         }
         
-        response = self._make_request("GET", endpoint, params=params)
-        if response.get("success", False):
-            # 연관어 결과 추출 및 가공
-            related_words = response.get("result", {}).get("words", [])
-            # 단어만 추출 (가중치나 기타 메타데이터 제외)
-            return [word.get("word") for word in related_words]
-        return []
+        try:
+            response = self._make_request("GET", endpoint, params=params)
+            self.logger.debug(f"연관어 API 응답: {response}")
+            
+            if response.get("success", False):
+                # 연관어 결과 추출 및 가공
+                related_words = response.get("result", {}).get("words", [])
+                # 단어만 추출 (가중치나 기타 메타데이터 제외)
+                result = []
+                for word in related_words:
+                    if isinstance(word, dict) and "word" in word:
+                        result.append(word["word"])
+                    elif isinstance(word, str):
+                        result.append(word)
+                return result
+            return []
+        except Exception as e:
+            self.logger.error(f"연관어 조회 오류: {e}")
+            return []
     
     def get_keyword_topn(
         self,
@@ -290,7 +378,7 @@ class BigKindsClient:
             빈출 단어 목록
         """
         # TopN API 호출
-        endpoint = f"{self.base_url}/word/topn"
+        endpoint = API_ENDPOINTS["word_topn"]
         
         # 날짜 기본값 설정
         if not date_from:
@@ -306,13 +394,107 @@ class BigKindsClient:
             "date_to": date_to
         }
         
-        response = self._make_request("GET", endpoint, params=params)
-        if response.get("success", False):
-            # TopN 결과 추출 및 가공
-            topn_words = response.get("result", {}).get("words", [])
-            # 단어만 추출
-            return [word.get("word") for word in topn_words]
-        return []
+        try:
+            response = self._make_request("GET", endpoint, params=params)
+            self.logger.debug(f"TopN API 응답: {response}")
+            
+            if response.get("success", False):
+                # TopN 결과 추출 및 가공
+                topn_words = response.get("result", {}).get("words", [])
+                # 단어만 추출
+                result = []
+                for word in topn_words:
+                    if isinstance(word, dict) and "word" in word:
+                        result.append(word["word"])
+                    elif isinstance(word, str):
+                        result.append(word)
+                return result
+            return []
+        except Exception as e:
+            self.logger.error(f"TopN 조회 오류: {e}")
+            return []
+    
+    def extract_keywords(
+        self,
+        title: str = "",
+        sub_title: str = "",
+        content: str = ""
+    ) -> Dict[str, List[str]]:
+        """기사 내용에서 키워드 추출
+        
+        Args:
+            title: 기사 제목
+            sub_title: 부제목
+            content: 기사 본문
+            
+        Returns:
+            각 필드별 추출된 키워드 목록
+        """
+        argument = {
+            "title": title,
+            "sub_title": sub_title,
+            "content": content
+        }
+        
+        result = self._make_request("POST", API_ENDPOINTS["keyword"], argument=argument)
+        
+        if result.get("result") == 0:
+            return_obj = result.get("return_object", {}).get("result", {})
+            return {
+                "title": return_obj.get("title", "").split() if return_obj.get("title") else [],
+                "sub_title": return_obj.get("sub_title", "").split() if return_obj.get("sub_title") else [],
+                "content": return_obj.get("content", "").split() if return_obj.get("content") else []
+            }
+        
+        return {"title": [], "sub_title": [], "content": []}
+    
+    def extract_features(
+        self,
+        title: str = "",
+        sub_title: str = "",
+        content: str = ""
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """기사 내용에서 키워드와 중요도 점수 추출
+        
+        Args:
+            title: 기사 제목
+            sub_title: 부제목
+            content: 기사 본문
+            
+        Returns:
+            각 필드별 추출된 키워드와 점수 목록
+        """
+        argument = {
+            "title": title,
+            "sub_title": sub_title,
+            "content": content
+        }
+        
+        result = self._make_request("POST", API_ENDPOINTS["feature"], argument=argument)
+        
+        if result.get("result") == 0:
+            return_obj = result.get("return_object", {}).get("result", {})
+            formatted_result = {}
+            
+            for field in ["title", "sub_title", "content"]:
+                field_data = return_obj.get(field, "")
+                keywords = []
+                
+                if field_data:
+                    # "키워드|점수" 형식을 파싱
+                    for item in field_data.split():
+                        if "|" in item:
+                            keyword, score = item.split("|", 1)
+                            keywords.append({
+                                "keyword": keyword,
+                                "score": float(score)
+                            })
+                
+                formatted_result[field] = keywords
+            
+            return formatted_result
+        
+        return {"title": [], "sub_title": [], "content": []}
     
     def get_popular_keywords(
         self,
@@ -406,7 +588,9 @@ class BigKindsClient:
         company_name: str,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        return_size: int = 20
+        return_size: int = 20,
+        provider: Optional[List[str]] = None,
+        exclude_prism: bool = True
     ) -> Dict[str, Any]:
         """기업 관련 뉴스 검색
         
@@ -415,6 +599,8 @@ class BigKindsClient:
             date_from: 시작일
             date_to: 종료일
             return_size: 반환할 결과 수
+            provider: 언론사 필터 (예: ["서울경제"])
+            exclude_prism: PRISM 기사 제외 여부
             
         Returns:
             기업 뉴스 검색 결과
@@ -426,11 +612,30 @@ class BigKindsClient:
             # BigKinds API의 until은 exclusive이므로 하루 더 추가
             date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        # 기업명으로 검색, 모든 언론사 대상
+        # 검색 쿼리 처리: 이미 따옴표와 괄호가 포함된 쿼리는 그대로 사용
+        if company_name.startswith('(') and ('"' in company_name or "'" in company_name):
+            enhanced_query = company_name  # 이미 확장된 쿼리는 그대로 사용
+            self.logger.debug(f"확장된 쿼리 그대로 사용: {enhanced_query}")
+        else:
+            # 단일 키워드는 따옴표로 감싸기
+            enhanced_query = f'"{company_name}"'
+            self.logger.debug(f"단일 키워드 따옴표 처리: {enhanced_query}")
+        
+        # PRISM 기사 제외 (서울경제의 경우)
+        if exclude_prism and provider and "서울경제" in provider:
+            # 이미 PRISM 제외 조건이 있는지 확인
+            if 'AND NOT "PRISM"' not in enhanced_query:
+                enhanced_query += ' AND NOT "PRISM"'
+                self.logger.debug(f"PRISM 제외 조건 추가: {enhanced_query}")
+
+        self.logger.info(f"최종 검색 쿼리: {enhanced_query}")
+
+        # 기업명으로 검색
         return self.search_news(
-            query=company_name,
+            query=enhanced_query,
             date_from=date_from,
             date_to=date_to,
+            provider=provider,  # 언론사 필터 추가
             fields=[
                 "news_id",
                 "title",
@@ -438,6 +643,7 @@ class BigKindsClient:
                 "published_at",
                 "category",
                 "provider_name",
+                "provider_code",  # 언론사 코드 추가
                 "provider_link_page",
                 "byline",
                 "images"
@@ -505,6 +711,24 @@ class BigKindsClient:
             news_ids=cluster_ids,
             fields=DEFAULT_NEWS_FIELDS,
             return_size=len(cluster_ids)
+        )
+    
+    def get_news_by_ids(self, news_ids: List[str]) -> Dict[str, Any]:
+        """뉴스 ID로 뉴스 목록 조회
+        
+        여러 뉴스 ID로 뉴스 내용을 조회
+        
+        Args:
+            news_ids: 뉴스 ID 목록
+            
+        Returns:
+            뉴스 목록
+        """
+        # 뉴스 ID로 검색
+        return self.search_news(
+            news_ids=news_ids,
+            fields=DEFAULT_NEWS_FIELDS,
+            return_size=len(news_ids)
         )
     
     def get_keyword_news_timeline(
@@ -593,7 +817,9 @@ class BigKindsClient:
         company_name: str,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        return_size: int = 30
+        return_size: int = 30,
+        provider: Optional[List[str]] = None,
+        exclude_prism: bool = True
     ) -> Dict[str, Any]:
         """기업별 뉴스 타임라인 조회
         
@@ -602,6 +828,8 @@ class BigKindsClient:
             date_from: 시작일
             date_to: 종료일
             return_size: 반환할 결과 수
+            provider: 언론사 필터 (예: ["서울경제"])
+            exclude_prism: PRISM 기사 제외 여부
             
         Returns:
             일자별 뉴스 목록
@@ -627,7 +855,9 @@ class BigKindsClient:
             company_name=company_name,
             date_from=date_from,
             date_to=adjusted_date_to,  # 조정된 값 사용
-            return_size=return_size
+            return_size=return_size,
+            provider=provider,  # 언론사 필터 추가
+            exclude_prism=exclude_prism  # PRISM 기사 제외 옵션 추가
         )
         
         # 응답 포맷팅
@@ -823,403 +1053,79 @@ class BigKindsClient:
         """인용문 검색 API 응답 포맷팅"""
         return format_quotation_response(api_response)
     
-    def generate_related_questions(
+    def quick_count(
+        self,
+        query: str,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None
+    ) -> int:
+        """검색 결과 갯수만 빠르게 확인 (return_size=0)
+        
+        Args:
+            query: 검색 쿼리
+            date_from: 시작일 (YYYY-MM-DD)
+            date_to: 종료일 (YYYY-MM-DD)
+            
+        Returns:
+            검색 결과 갯수
+        """
+        # 기본 날짜 설정 (최근 30일)
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            # BigKinds API의 until은 exclusive이므로 하루 더 추가
+            date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        # 결과 수만 확인하기 위한 최소 요청
+        argument = {
+            "published_at": {
+                "from": date_from,
+                "until": date_to
+            },
+            "query": query,
+            "return_size": 0  # 결과는 필요 없음
+        }
+        
+        result = self._make_request("POST", API_ENDPOINTS["news_search"], argument=argument)
+        if result.get("result") == 0:
+            return int(result.get("return_object", {}).get("total_hits", 0))
+        return 0
+
+    async def build_related_questions(
         self,
         keyword: str,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        max_questions: int = 10,
-        cluster_count: int = 5,
-        max_recursion_depth: int = 2,
-        min_articles_per_query: int = 3
+        max_questions: int = 7
     ) -> List[Dict[str, Any]]:
-        """키워드 기반 연관 질문 생성
+        """새로운 "AND 우선, 부족하면 OR" 전략을 사용한 연관 질문 생성
         
         Args:
-            keyword: 초기 검색 키워드
+            keyword: 검색 키워드
             date_from: 시작일 (YYYY-MM-DD)
             date_to: 종료일 (YYYY-MM-DD)
-            max_questions: 생성할 최대 질문 수
-            cluster_count: 키워드 클러스터링 그룹 수
-            max_recursion_depth: 쿼리 확장 최대 재귀 깊이
-            min_articles_per_query: 유효한 쿼리로 판단할 최소 기사 수
+            max_questions: 반환할 최대 질문 수
             
         Returns:
-            생성된 연관 질문 목록
+            생성된 질문 목록
         """
-        import numpy as np
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.cluster import KMeans
-        from sklearn.metrics.pairwise import cosine_similarity
-        import re
+        from backend.services.news.question_builder import build_questions
         
-        self.logger.info(f"'{keyword}' 키워드 기반 연관 질문 생성 시작")
+        self.logger.info(f"키워드 '{keyword}' 연관 질문 생성 (새 알고리즘)")
         
-        # 1. 키워드 수집 & 초기 검색
-        # 1-1. 초기 뉴스 검색
-        news_result = self.search_news(
-            query=keyword,
+        # 기본 날짜 설정
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            # BigKinds API의 until은 exclusive이므로 하루 더 추가
+            date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        # 질문 빌더 호출
+        questions = await build_questions(
+            base=keyword,
+            client=self,
             date_from=date_from,
-            date_to=date_to,
-            return_size=30
-        )
-        formatted_news = format_news_response(news_result)
-        
-        if not formatted_news.get("documents"):
-            self.logger.warning(f"'{keyword}' 검색 결과 없음")
-            return []
-        
-        # 1-2. 연관 키워드 수집
-        related_keywords = self.get_related_keywords(
-            keyword=keyword,
-            date_from=date_from,
-            date_to=date_to,
-            max_count=30
+            date_until=date_to
         )
         
-        # 1-3. TopN 키워드 수집
-        topn_keywords = self.get_keyword_topn(
-            keyword=keyword,
-            date_from=date_from,
-            date_to=date_to,
-            limit=30
-        )
-        
-        # 1-4. 인기 검색어 수집 (참고용)
-        popular_keywords_result = self.get_popular_keywords(days=7, limit=20)
-        popular_keywords = []
-        if popular_keywords_result.get("formatted_keywords"):
-            popular_keywords = [item.get("keyword") for item in popular_keywords_result.get("formatted_keywords", [])]
-        
-        # 2. 키워드 필터링 & 점수화
-        # 2-1. 모든 키워드 병합 및 중복 제거
-        all_keywords = []
-        # 연관어 키워드 (가중치: 1.5)
-        for idx, kw in enumerate(related_keywords):
-            all_keywords.append({
-                "keyword": kw,
-                "source": "related",
-                "rank": idx + 1,
-                "weight": 1.5 * (1.0 / (idx + 1)),
-                "has_original": keyword.lower() in kw.lower()
-            })
-        
-        # TopN 키워드 (가중치: 1.2)
-        for idx, kw in enumerate(topn_keywords):
-            all_keywords.append({
-                "keyword": kw,
-                "source": "topn",
-                "rank": idx + 1,
-                "weight": 1.2 * (1.0 / (idx + 1)),
-                "has_original": keyword.lower() in kw.lower()
-            })
-        
-        # 인기 검색어 (가중치: 1.0)
-        for idx, kw in enumerate(popular_keywords):
-            all_keywords.append({
-                "keyword": kw,
-                "source": "popular",
-                "rank": idx + 1,
-                "weight": 1.0 * (1.0 / (idx + 1)),
-                "has_original": keyword.lower() in kw.lower()
-            })
-        
-        # 2-2. 키워드 필터링
-        # - 최소 길이 2자 이상
-        # - 숫자만으로 구성된 키워드 제외
-        # - 특수문자만으로 구성된 키워드 제외
-        filtered_keywords = []
-        seen_keywords = set()
-        
-        for kw_data in all_keywords:
-            kw = kw_data["keyword"]
-            
-            # 이미 처리한 키워드 건너뛰기
-            if kw.lower() in seen_keywords:
-                continue
-                
-            # 필터링 조건
-            if len(kw) < 2:
-                continue
-            if re.match(r'^\d+$', kw):
-                continue
-            if re.match(r'^[^\w\s가-힣]+$', kw):
-                continue
-                
-            # 원래 키워드와 동일한 경우 (대소문자 무시)
-            if kw.lower() == keyword.lower():
-                continue
-                
-            # 통과한 키워드 추가
-            filtered_keywords.append(kw_data)
-            seen_keywords.add(kw.lower())
-        
-        # 키워드가 없으면 빈 결과 반환
-        if not filtered_keywords:
-            self.logger.warning(f"'{keyword}' 관련 필터링된 키워드 없음")
-            return []
-            
-        # 2-3. 키워드 가중치 추가 점수화
-        # - 원본 키워드 포함 시 보너스
-        # - 중복 출현 시 보너스
-        scored_keywords = []
-        keyword_scores = {}
-        
-        for kw_data in filtered_keywords:
-            kw = kw_data["keyword"]
-            score = kw_data["weight"]
-            
-            # 원본 키워드 포함 보너스
-            if kw_data["has_original"]:
-                score *= 1.3
-                
-            # 키워드 점수 누적
-            if kw in keyword_scores:
-                keyword_scores[kw] += score
-            else:
-                keyword_scores[kw] = score
-        
-        # 점수화된 키워드 목록 생성
-        for kw, score in keyword_scores.items():
-            scored_keywords.append({
-                "keyword": kw,
-                "score": score
-            })
-            
-        # 점수 기준 내림차순 정렬
-        scored_keywords.sort(key=lambda x: x["score"], reverse=True)
-        
-        # 상위 키워드만 선택 (클러스터링 효율성 위해)
-        top_keywords = scored_keywords[:min(50, len(scored_keywords))]
-        
-        # 3. 클러스터링으로 대표 키워드 선정
-        # 3-1. 텍스트 벡터화
-        keyword_texts = [item["keyword"] for item in top_keywords]
-        
-        # 데이터가 충분하지 않으면 클러스터링 건너뛰기
-        if len(keyword_texts) < cluster_count:
-            representative_keywords = keyword_texts
-        else:
-            try:
-                # TF-IDF 벡터화
-                vectorizer = TfidfVectorizer()
-                X = vectorizer.fit_transform(keyword_texts)
-                
-                # K-means 클러스터링
-                actual_clusters = min(cluster_count, len(keyword_texts))
-                kmeans = KMeans(n_clusters=actual_clusters, random_state=42)
-                kmeans.fit(X)
-                
-                # 각 클러스터 중심에 가장 가까운 키워드 선택
-                centers = kmeans.cluster_centers_
-                representative_keywords = []
-                
-                for i in range(actual_clusters):
-                    # 현재 클러스터에 속한 키워드 인덱스
-                    cluster_indices = np.where(kmeans.labels_ == i)[0]
-                    
-                    if len(cluster_indices) > 0:
-                        # 클러스터 내 각 키워드와 중심 간의 유사도 계산
-                        cluster_vectors = X[cluster_indices]
-                        center_vector = centers[i].reshape(1, -1)
-                        similarities = cosine_similarity(cluster_vectors, center_vector)
-                        
-                        # 가장 유사한 키워드 선택
-                        most_similar_idx = cluster_indices[np.argmax(similarities)]
-                        representative_keywords.append(keyword_texts[most_similar_idx])
-                        
-                        # 충분히 큰 클러스터면 두 번째로 유사한 키워드도 추가
-                        if len(cluster_indices) >= 5 and len(representative_keywords) < max_questions:
-                            # 이미 선택된 인덱스 제외
-                            remaining_indices = [idx for idx in cluster_indices if idx != most_similar_idx]
-                            if remaining_indices:
-                                remaining_vectors = X[remaining_indices]
-                                second_similarities = cosine_similarity(remaining_vectors, center_vector)
-                                second_similar_idx = remaining_indices[np.argmax(second_similarities)]
-                                representative_keywords.append(keyword_texts[second_similar_idx])
-            except Exception as e:
-                self.logger.error(f"클러스터링 오류: {str(e)}")
-                # 오류 발생 시 점수 기준 상위 키워드 사용
-                representative_keywords = [item["keyword"] for item in top_keywords[:cluster_count]]
-        
-        # 4. 쿼리 변형 & 재귀 확장 탐색
-        # 4-1. 쿼리 변형 생성 함수
-        def generate_query_variants(base_keyword, expand_keyword):
-            variants = []
-            
-            # 정교화(AND) 변형
-            variants.append({
-                "type": "AND",
-                "query": f"{base_keyword} {expand_keyword}",
-                "description": f"{base_keyword}와(과) {expand_keyword}에 관한"
-            })
-            
-            # 확장(OR) 변형
-            variants.append({
-                "type": "OR",
-                "query": f"{base_keyword} OR {expand_keyword}",
-                "description": f"{base_keyword} 또는 {expand_keyword}에 관한"
-            })
-            
-            # 제외(NOT) 변형 - base_keyword와 expand_keyword가 충분히 다른 경우만
-            if base_keyword.lower() not in expand_keyword.lower() and expand_keyword.lower() not in base_keyword.lower():
-                variants.append({
-                    "type": "NOT",
-                    "query": f"{base_keyword} NOT {expand_keyword}",
-                    "description": f"{expand_keyword}을(를) 제외한 {base_keyword}에 관한"
-                })
-                
-            return variants
-        
-        # 4-2. 재귀 확장 탐색 함수
-        def explore_queries(base_keyword, keywords, depth=0, results=None):
-            if results is None:
-                results = []
-                
-            # 최대 재귀 깊이 초과 시 중단
-            if depth >= max_recursion_depth:
-                return results
-                
-            # 결과 수 제한 도달 시 중단
-            if len(results) >= max_questions:
-                return results[:max_questions]
-                
-            for kw in keywords:
-                # 이미 충분한 결과가 있으면 중단
-                if len(results) >= max_questions:
-                    break
-                    
-                # 쿼리 변형 생성
-                variants = generate_query_variants(base_keyword, kw)
-                
-                for variant in variants:
-                    # 결과 제한 확인
-                    if len(results) >= max_questions:
-                        break
-                        
-                    # 이미 동일한 쿼리가 있는지 확인
-                    if any(r["query"] == variant["query"] for r in results):
-                        continue
-                    
-                    # 변형 쿼리로 뉴스 검색
-                    search_result = self.search_news(
-                        query=variant["query"],
-                        date_from=date_from,
-                        date_to=date_to,
-                        return_size=min_articles_per_query
-                    )
-                    
-                    formatted_result = format_news_response(search_result)
-                    article_count = len(formatted_result.get("documents", []))
-                    
-                    # 최소 기사 수 이상인 경우만 유효한 쿼리로 간주
-                    if article_count >= min_articles_per_query:
-                        # 관련 기사 제목 추출 (질문 생성 참고용)
-                        titles = [doc.get("title", "") for doc in formatted_result.get("documents", [])[:3]]
-                        
-                        result_item = {
-                            "query": variant["query"],
-                            "type": variant["type"],
-                            "description": variant["description"],
-                            "article_count": article_count,
-                            "depth": depth,
-                            "reference_titles": titles,
-                            "question": ""  # 나중에 채워질 필드
-                        }
-                        
-                        results.append(result_item)
-                        
-                        # 재귀 호출 (깊이 증가)
-                        if depth < max_recursion_depth - 1 and len(results) < max_questions:
-                            # 재귀 호출은 결과가 적은 경우만 수행
-                            if article_count < 50:
-                                # 이 쿼리 결과에서 키워드 추출
-                                sub_keywords = []
-                                try:
-                                    sub_topn = self.get_keyword_topn(
-                                        keyword=variant["query"],
-                                        date_from=date_from,
-                                        date_to=date_to,
-                                        limit=5
-                                    )
-                                    sub_keywords = sub_topn[:2]  # 상위 2개만 사용
-                                except:
-                                    pass
-                                
-                                if sub_keywords:
-                                    explore_queries(variant["query"], sub_keywords, depth+1, results)
-            
-            return results
-        
-        # 4-3. 쿼리 확장 실행
-        expanded_queries = explore_queries(keyword, representative_keywords)
-        
-        # 5. 질문 생성 & 순위 매기기
-        # 5-1. 질문 템플릿 정의
-        question_templates = [
-            "{keyword}의 최근 동향은?",
-            "{keyword}에 대해 알려주세요",
-            "{keyword}에 관한 최신 뉴스는?",
-            "{keyword}의 주요 이슈는?",
-            "{keyword}의 핵심 내용은?",
-            "{keyword}에 대한 분석이 필요합니다",
-            "{keyword}에 대해 더 자세히 알고 싶어요",
-            "{keyword}의 영향은 무엇인가요?",
-            "{keyword}와 관련된 중요 사항은?",
-            "{keyword}에 대한 전문가 의견은?"
-        ]
-        
-        # 5-2. 각 쿼리에 대한 질문 생성
-        final_questions = []
-        
-        for query_data in expanded_queries:
-            # 쿼리 유형에 따라 다른 템플릿 선택
-            if query_data["type"] == "AND":
-                template = "{keyword}에 대해 알려주세요"
-            elif query_data["type"] == "OR":
-                template = "{keyword}의 최근 동향은?"
-            elif query_data["type"] == "NOT":
-                template = "{keyword}에 관한 최신 뉴스는?"
-            else:
-                # 랜덤 템플릿 선택
-                import random
-                template = random.choice(question_templates)
-            
-            # 질문 생성
-            question = template.format(keyword=query_data["description"])
-            
-            # 유니크한 질문인지 확인
-            if not any(q["question"] == question for q in final_questions):
-                query_data["question"] = question
-                final_questions.append(query_data)
-        
-        # 5-3. 질문 점수화 및 정렬
-        # - 기사 수가 많을수록 높은 점수
-        # - 깊이가 낮을수록 높은 점수
-        for q in final_questions:
-            # 기사 수 정규화 (로그 스케일)
-            article_score = np.log1p(q["article_count"]) / 10  # 0~1 범위로 정규화
-            
-            # 깊이 역수 (깊이가 낮을수록 높은 점수)
-            depth_score = 1.0 / (q["depth"] + 1)
-            
-            # 최종 점수
-            q["score"] = (0.7 * article_score) + (0.3 * depth_score)
-        
-        # 점수 기준 정렬
-        final_questions.sort(key=lambda x: x["score"], reverse=True)
-        
-        # 최종 결과 형식 정리
-        result_questions = []
-        for idx, q in enumerate(final_questions[:max_questions]):
-            result_questions.append({
-                "id": idx + 1,
-                "question": q["question"],
-                "query": q["query"],
-                "count": q["article_count"],
-                "score": q["score"],
-                "description": q["description"]
-            })
-        
-        self.logger.info(f"'{keyword}' 키워드 관련 질문 {len(result_questions)}개 생성 완료")
-        return result_questions 
+        return questions[:max_questions] 

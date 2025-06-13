@@ -8,6 +8,6 @@ from ..clients.bigkinds import BigKindsClient
 import os
 
 def get_bigkinds_client() -> BigKindsClient:
-    """BigKinds 클라이언트 인스턴스 가져오기"""
-    api_key = os.environ.get("BIGKINDS_KEY", "")
-    return BigKindsClient(api_key=api_key) 
+    """BigKinds 클라이언트 인스턴스 가져오기 (다중 API 키 지원)"""
+    # 클라이언트가 자동으로 환경변수에서 다중 키를 읽도록 함
+    return BigKindsClient() 

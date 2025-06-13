@@ -6,18 +6,21 @@
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Path
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Dict, List, Any, Optional
 from datetime import datetime, date, timedelta
 import sys
 from pathlib import Path as PathLib
+import json
+import asyncio
 
 # 프로젝트 루트 디렉토리 찾기
 PROJECT_ROOT = PathLib(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.utils.logger import setup_logger
-from backend.api.clients.bigkinds_client import BigKindsClient
+from backend.api.clients.bigkinds import BigKindsClient
 import openai
 import os
 from backend.constants.provider_map import PROVIDER_MAP
@@ -43,6 +46,7 @@ class CompanyNewsRequest(BaseModel):
     date_from: Optional[str] = Field(None, description="시작일 (YYYY-MM-DD)")
     date_to: Optional[str] = Field(None, description="종료일 (YYYY-MM-DD)")
     limit: Optional[int] = Field(default=20, description="가져올 기사 수", ge=1, le=100)
+    provider: Optional[List[str]] = Field(None, description="언론사 필터 (예: ['서울경제'])")
 
 class KeywordNewsRequest(BaseModel):
     """키워드 뉴스 요청 모델"""
@@ -54,7 +58,6 @@ class KeywordNewsRequest(BaseModel):
 class AISummaryRequest(BaseModel):
     """AI 요약 요청 모델"""
     news_ids: List[str] = Field(..., description="요약할 뉴스 ID 리스트 (최대 5개)", max_items=5)
-    summary_type: str = Field(..., description="요약 유형", pattern="^(issue|quote|data)$")
 
 # 엔드포인트 정의
 @router.get("/latest", response_model=LatestNewsResponse)
@@ -290,7 +293,8 @@ async def get_company_news(
             company_name=request.company_name,
             date_from=request.date_from,
             date_to=request.date_to,
-            return_size=request.limit
+            return_size=request.limit,
+            provider=request.provider  # 언론사 필터 추가
         )
         
         if not result.get("success", False):
@@ -400,10 +404,10 @@ async def generate_ai_summary(
 ):
     """선택된 뉴스 기사들의 AI 요약 생성
     
-    이슈 중심, 인용 중심, 수치 중심 요약을 생성합니다.
+    통합된 요약을 생성합니다. 핵심 이슈, 주요 인용문, 주요 수치 데이터를 모두 포함합니다.
     """
     logger = setup_logger("api.news.ai_summary")
-    logger.info(f"AI 요약 요청: {request.summary_type} - {len(request.news_ids)}개 기사")
+    logger.info(f"AI 요약 요청: {len(request.news_ids)}개 기사")
     
     try:
         # OpenAI API 키 설정
@@ -440,51 +444,89 @@ async def generate_ai_summary(
             articles_text += f"발행일: {published_at}\n"
             articles_text += f"내용: {content}\n\n"
         
-        # 요약 타입에 따른 프롬프트 설정
-        prompts = {
-            "issue": {
-                "system": "당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 핵심 이슈를 중심으로 요약해주세요.",
-                "user": f"다음 {len(articles)}개의 뉴스 기사를 분석하여 이슈 중심으로 요약해주세요.\n\n{articles_text}\n\n요구사항:\n1. 핵심 이슈 3-5개를 명확히 파악\n2. 각 이슈의 중요도와 영향을 분석\n3. 향후 전망 제시\n4. JSON 형태로 응답: {{\"title\": \"이슈 중심 요약\", \"summary\": \"전체 요약\", \"key_points\": [\"포인트1\", \"포인트2\", ...], \"type\": \"issue\"}}"
-            },
-            "quote": {
-                "system": "당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들에서 주요 인용문과 발언을 중심으로 요약해주세요.",
-                "user": f"다음 {len(articles)}개의 뉴스 기사에서 주요 인용문을 중심으로 요약해주세요.\n\n{articles_text}\n\n요구사항:\n1. 중요한 인용문과 발언자 식별\n2. 발언의 맥락과 의미 분석\n3. 각 발언의 영향력 평가\n4. JSON 형태로 응답: {{\"title\": \"인용 중심 요약\", \"summary\": \"전체 요약\", \"key_quotes\": [{{\"source\": \"발언자\", \"quote\": \"인용문\"}}, ...], \"type\": \"quote\"}}"
-            },
-            "data": {
-                "system": "당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들에서 수치와 데이터를 중심으로 요약해주세요.",
-                "user": f"다음 {len(articles)}개의 뉴스 기사에서 중요한 수치와 데이터를 중심으로 요약해주세요.\n\n{articles_text}\n\n요구사항:\n1. 핵심 수치와 통계 데이터 추출\n2. 각 수치의 의미와 변화율 분석\n3. 비교 기준과 맥락 제시\n4. JSON 형태로 응답: {{\"title\": \"수치 중심 요약\", \"summary\": \"전체 요약\", \"key_data\": [{{\"metric\": \"지표명\", \"value\": \"수치\", \"context\": \"맥락\"}}, ...], \"type\": \"data\"}}"
-            }
-        }
+        # 통합된 요약 프롬프트 설정
+        system_prompt = """당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 종합적인 요약을 제공해주세요.
         
-        prompt_config = prompts.get(request.summary_type, prompts["issue"])
+요약에는 다음 세 가지 측면을 모두 포함해야 합니다:
+1. 핵심 이슈: 주요 이슈와 동향을 파악하고 그 중요도와 영향을 분석
+2. 주요 인용문: 중요한 인물의 발언과 그 맥락 및 의미 분석
+3. 주요 수치 데이터: 핵심 통계와 수치 데이터 및 그 의미 분석
+
+JSON 형태로 응답해주세요:
+{
+  "title": "종합 뉴스 요약",
+  "summary": "전체 요약 내용",
+  "key_points": ["핵심 포인트1", "핵심 포인트2", ...],
+  "key_quotes": [{"source": "발언자1", "quote": "인용문1"}, {"source": "발언자2", "quote": "인용문2"}, ...],
+  "key_data": [{"metric": "지표명1", "value": "수치1", "context": "맥락1"}, {"metric": "지표명2", "value": "수치2", "context": "맥락2"}, ...]
+}"""
+
+        user_prompt = f"다음 {len(articles)}개의 뉴스 기사를 분석하여 종합적으로 요약해주세요.\n\n{articles_text}\n\n요구사항:\n1. 핵심 이슈 3-5개를 명확히 파악\n2. 중요한 인용문과 발언자 식별\n3. 핵심 수치와 통계 데이터 추출\n4. JSON 형태로 응답"
         
-        # OpenAI GPT-4 Turbo로 요약 생성 (구버전 openai 패키지 방식)
+        # OpenAI GPT-4 Turbo로 요약 생성
         openai.api_key = os.getenv("OPENAI_API_KEY")
         
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4-turbo-preview",
                 messages=[
-                    {"role": "system", "content": prompt_config["system"]},
-                    {"role": "user", "content": prompt_config["user"]}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=2000,
                 temperature=0.3
             )
             
             ai_summary = response.choices[0].message.content
+            
+            # JSON 응답 파싱
+            try:
+                # JSON 문자열 추출 (마크다운 코드 블록이 있을 경우 처리)
+                json_str = ai_summary
+                if "```json" in json_str:
+                    json_str = json_str.split("```json")[1].split("```")[0].strip()
+                elif "```" in json_str:
+                    json_str = json_str.split("```")[1].split("```")[0].strip()
+                
+                summary_data = json.loads(json_str)
+                
+                # 필수 필드 확인 및 기본값 설정
+                if "summary" not in summary_data:
+                    summary_data["summary"] = "요약 생성에 실패했습니다."
+                if "key_points" not in summary_data:
+                    summary_data["key_points"] = []
+                if "key_quotes" not in summary_data:
+                    summary_data["key_quotes"] = []
+                if "key_data" not in summary_data:
+                    summary_data["key_data"] = []
+                
+                # 결과 구성
+                summary_result = {
+                    "title": summary_data.get("title", "종합 뉴스 요약"),
+                    "summary": summary_data["summary"],
+                    "key_points": summary_data["key_points"],
+                    "key_quotes": summary_data["key_quotes"],
+                    "key_data": summary_data["key_data"],
+                    "type": "integrated",  # 통합 유형으로 설정
+                    "articles_analyzed": len(articles),
+                    "generated_at": datetime.now().isoformat(),
+                    "model_used": "gpt-4-turbo-preview"
+                }
+                
+            except json.JSONDecodeError:
+                # JSON 파싱 실패 시 텍스트 그대로 반환
+                summary_result = {
+                    "title": "종합 뉴스 요약",
+                    "summary": ai_summary,
+                    "type": "integrated",
+                    "articles_analyzed": len(articles),
+                    "generated_at": datetime.now().isoformat(),
+                    "model_used": "gpt-4-turbo-preview"
+                }
+            
         except Exception as e:
             logger.error(f"AI 요약 생성 오류: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"AI 요약 생성 중 오류 발생: {str(e)}")
-        
-        summary_result = {
-            "title": f"{request.summary_type.title()} 중심 요약",
-            "summary": ai_summary,
-            "type": request.summary_type,
-            "articles_analyzed": len(articles),
-            "generated_at": datetime.now().isoformat(),
-            "model_used": "gpt-4-turbo-preview"
-        }
         
         return summary_result
         
@@ -493,6 +535,205 @@ async def generate_ai_summary(
     except Exception as e:
         logger.error(f"AI 요약 생성 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"AI 요약 생성 중 오류 발생: {str(e)}")
+
+@router.post("/ai-summary-stream")
+async def generate_ai_summary_stream(
+    request: AISummaryRequest,
+    bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)
+):
+    """선택된 뉴스 기사들의 AI 요약 생성 (스트리밍)
+    
+    실시간으로 생성 과정을 스트리밍하며, 기사 참조 정보를 포함합니다.
+    """
+    logger = setup_logger("api.news.ai_summary_stream")
+    logger.info(f"AI 요약 스트리밍 요청: {len(request.news_ids)}개 기사")
+    
+    async def generate():
+        try:
+            # 1단계: 기사 수집
+            yield f"data: {json.dumps({'step': '기사 수집 중...', 'progress': 10}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.1)
+            
+            # OpenAI API 키 설정
+            openai.api_key = os.getenv("OPENAI_API_KEY")
+            
+            # 선택된 뉴스 기사들 가져오기
+            if request.news_ids and any("cluster" in news_id.lower() for news_id in request.news_ids):
+                search_result = bigkinds_client.get_news_by_cluster_ids(request.news_ids)
+            else:
+                search_result = bigkinds_client.get_news_by_ids(request.news_ids)
+            
+            formatted_result = bigkinds_client.format_news_response(search_result)
+            articles = formatted_result.get("documents", [])
+            
+            if not articles:
+                yield f"data: {json.dumps({'error': '선택된 뉴스를 찾을 수 없습니다'}, ensure_ascii=False)}\n\n"
+                return
+            
+            # 2단계: 기사 분석 중
+            yield f"data: {json.dumps({'step': f'{len(articles)}개 기사 분석 중...', 'progress': 30}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.1)
+            
+            # 기사 내용 준비 및 참조 정보 구성
+            articles_text = ""
+            article_refs = []
+            
+            for i, article in enumerate(articles, 1):
+                title = article.get("title", "")
+                content = article.get("content", "") or article.get("summary", "")
+                provider = article.get("provider", "") or "알 수 없음"
+                published_at = article.get("published_at", "")
+                byline = article.get("byline", "")
+                article_id = article.get("id", "")
+                url = article.get("url", "")
+                
+                # 참조 정보 저장
+                article_refs.append({
+                    "ref_id": f"ref{i}",
+                    "title": title,
+                    "provider": provider,
+                    "published_at": published_at,
+                    "byline": byline,
+                    "id": article_id,
+                    "url": url
+                })
+                
+                articles_text += f"[기사 ref{i}]\n"
+                articles_text += f"제목: {title}\n"
+                articles_text += f"언론사: {provider}\n"
+                if byline:
+                    articles_text += f"기자: {byline}\n"
+                articles_text += f"발행일: {published_at}\n"
+                articles_text += f"내용: {content}\n\n"
+            
+            # 3단계: AI 분석 시작
+            yield f"data: {json.dumps({'step': 'AI가 분석을 시작합니다...', 'progress': 50}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.1)
+            
+            # 개선된 프롬프트 (기사 참조 포함)
+            system_prompt = """당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 종합적인 요약을 제공해주세요.
+
+중요한 지침:
+1. 인용이나 참조 시 반드시 [ref번호] 형태로 출처를 명시하세요
+2. 직접 인용구는 큰따옴표와 함께 출처를 표시하세요
+3. 통계나 수치 데이터도 출처를 명시하세요
+
+요약에는 다음 세 가지 측면을 모두 포함해야 합니다:
+1. 핵심 이슈: 주요 이슈와 동향을 파악하고 그 중요도와 영향을 분석
+2. 주요 인용문: 중요한 인물의 발언과 그 맥락 및 의미 분석  
+3. 주요 수치 데이터: 핵심 통계와 수치 데이터 및 그 의미 분석
+
+JSON 형태로 응답해주세요:
+{
+  "title": "종합 뉴스 요약",
+  "summary": "전체 요약 내용 (출처 [ref번호] 포함)",
+  "key_points": ["핵심 포인트1 [ref번호]", "핵심 포인트2 [ref번호]", ...],
+  "key_quotes": [{"source": "발언자1", "quote": "인용문1", "ref": "ref번호"}, ...],
+  "key_data": [{"metric": "지표명1", "value": "수치1", "context": "맥락1", "ref": "ref번호"}, ...]
+}"""
+
+            user_prompt = f"""다음 {len(articles)}개의 뉴스 기사를 분석하여 종합적으로 요약해주세요.
+
+{articles_text}
+
+요구사항:
+1. 핵심 이슈 3-5개를 명확히 파악
+2. 중요한 인용문과 발언자 식별
+3. 핵심 수치와 통계 데이터 추출
+4. 모든 내용에 기사 참조 [ref번호] 포함
+5. JSON 형태로 응답"""
+            
+            # 4단계: OpenAI API 호출
+            yield f"data: {json.dumps({'step': 'AI 요약 생성 중...', 'progress': 70}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.1)
+            
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4-turbo-preview",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=2500,
+                    temperature=0.3,
+                    stream=True  # 스트리밍 활성화
+                )
+                
+                # 5단계: 스트리밍 응답 처리
+                yield f"data: {json.dumps({'step': '요약 내용을 실시간으로 생성 중...', 'progress': 80}, ensure_ascii=False)}\n\n"
+                
+                collected_content = ""
+                for chunk in response:
+                    if chunk.choices[0].delta.get('content'):
+                        content_chunk = chunk.choices[0].delta.content
+                        collected_content += content_chunk
+                        
+                        # 실시간으로 텍스트 전송
+                        yield f"data: {json.dumps({'chunk': content_chunk}, ensure_ascii=False)}\n\n"
+                        await asyncio.sleep(0.01)  # 자연스러운 스트리밍을 위한 딜레이
+                
+                # 6단계: JSON 파싱 및 최종 결과
+                yield f"data: {json.dumps({'step': '결과 정리 중...', 'progress': 90}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.1)
+                
+                # JSON 파싱
+                try:
+                    json_str = collected_content
+                    if "```json" in json_str:
+                        json_str = json_str.split("```json")[1].split("```")[0].strip()
+                    elif "```" in json_str:
+                        json_str = json_str.split("```")[1].split("```")[0].strip()
+                    
+                    summary_data = json.loads(json_str)
+                    
+                    # 필수 필드 확인
+                    if "summary" not in summary_data:
+                        summary_data["summary"] = collected_content
+                    if "key_points" not in summary_data:
+                        summary_data["key_points"] = []
+                    if "key_quotes" not in summary_data:
+                        summary_data["key_quotes"] = []
+                    if "key_data" not in summary_data:
+                        summary_data["key_data"] = []
+                    
+                    # 최종 결과 구성
+                    summary_result = {
+                        "title": summary_data.get("title", "종합 뉴스 요약"),
+                        "summary": summary_data["summary"],
+                        "key_points": summary_data["key_points"],
+                        "key_quotes": summary_data["key_quotes"],
+                        "key_data": summary_data["key_data"],
+                        "type": "integrated",
+                        "articles_analyzed": len(articles),
+                        "generated_at": datetime.now().isoformat(),
+                        "model_used": "gpt-4-turbo-preview",
+                        "article_references": article_refs  # 기사 참조 정보 추가
+                    }
+                    
+                except json.JSONDecodeError:
+                    # JSON 파싱 실패 시 텍스트 그대로 반환
+                    summary_result = {
+                        "title": "종합 뉴스 요약",
+                        "summary": collected_content,
+                        "type": "integrated",
+                        "articles_analyzed": len(articles),
+                        "generated_at": datetime.now().isoformat(),
+                        "model_used": "gpt-4-turbo-preview",
+                        "article_references": article_refs
+                    }
+                
+                # 완료
+                yield f"data: {json.dumps({'step': '완료!', 'progress': 100, 'result': summary_result}, ensure_ascii=False)}\n\n"
+                
+            except Exception as e:
+                logger.error(f"OpenAI API 오류: {e}", exc_info=True)
+                yield f"data: {json.dumps({'error': f'AI 요약 생성 중 오류 발생: {str(e)}'}, ensure_ascii=False)}\n\n"
+                
+        except Exception as e:
+            logger.error(f"AI 요약 스트리밍 오류: {e}", exc_info=True)
+            yield f"data: {json.dumps({'error': f'요약 생성 중 오류 발생: {str(e)}'}, ensure_ascii=False)}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/plain")
 
 @router.get("/watchlist/suggestions")
 async def get_watchlist_suggestions():
@@ -586,7 +827,7 @@ async def get_company_news_summary(
         news_data = bigkinds_client.get_company_news_for_summary(
             company_name=company_name,
             days=days,
-            limit=5
+            limit=1  # 개수만 확인하므로 1개만
         )
         
         if not news_data.get("success") or not news_data.get("articles"):
@@ -669,19 +910,46 @@ async def get_company_report(
     기업명과 레포트 타입에 따라 기간별 뉴스 레포트를 생성합니다.
     """
     logger = setup_logger("api.news.company_report")
-    logger.info(f"기업 레포트 요청: {company_name}, 타입: {report_type}")
+    logger.info(f"기업 레포트 요청: {company_name}, 타입: {report_type}, 기준일: {reference_date}")
     
     valid_report_types = ["daily", "weekly", "monthly", "quarterly", "yearly"]
     if report_type not in valid_report_types:
+        logger.warning(f"잘못된 레포트 타입 요청: {report_type}")
         raise HTTPException(status_code=400, detail=f"지원하지 않는 레포트 타입입니다. 유효한 타입: {', '.join(valid_report_types)}")
     
     try:
         # OpenAI API 키 확인
         openai.api_key = os.getenv("OPENAI_API_KEY")
         if not openai.api_key:
-            raise HTTPException(status_code=500, detail="AI 요약 서비스를 사용할 수 없습니다")
+            logger.error("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다")
+            return {
+                "success": False,
+                "error": "AI 요약 서비스에 필요한 API 키가 설정되지 않았습니다",
+                "company": company_name,
+                "report_type": report_type,
+                "report_type_kr": get_report_type_kr(report_type),
+                "message": "관리자에게 문의하세요."
+            }
+        
+        # BigKinds API 키 확인
+        if not os.getenv("BIGKINDS_KEY"):
+            logger.error("BIGKINDS_KEY 환경 변수가 설정되지 않았습니다")
+            return {
+                "success": False,
+                "error": "뉴스 검색 서비스에 필요한 API 키가 설정되지 않았습니다",
+                "company": company_name,
+                "report_type": report_type,
+                "report_type_kr": get_report_type_kr(report_type),
+                "message": "관리자에게 문의하세요."
+            }
+        
+        # API 키 로깅 (마스킹 처리)
+        openai_key_status = "설정됨" if openai.api_key else "설정되지 않음"
+        bigkinds_key_status = "설정됨" if os.getenv("BIGKINDS_KEY") else "설정되지 않음"
+        logger.info(f"API 키 상태 - OpenAI: {openai_key_status}, BigKinds: {bigkinds_key_status}")
         
         # BigKinds API로 기업 뉴스 레포트 데이터 조회
+        logger.info(f"기업 뉴스 레포트 데이터 조회 시작: {company_name}")
         report_data = bigkinds_client.get_company_news_report(
             company_name=company_name,
             report_type=report_type,
@@ -689,10 +957,14 @@ async def get_company_report(
         )
         
         if not report_data.get("success", False):
+            logger.warning(f"기업 뉴스 레포트 데이터 조회 실패: {report_data.get('error', '알 수 없는 오류')}")
             raise HTTPException(status_code=404, detail=f"기업 뉴스 레포트를 생성할 수 없습니다")
         
         articles = report_data.get("articles", [])
+        logger.info(f"조회된 기사 수: {len(articles)}")
+        
         if not articles:
+            logger.warning(f"조회된 기사가 없습니다: {company_name}, {report_type}")
             return {
                 **report_data,
                 "summary": f"{company_name}에 대한 {report_data.get('report_type_kr')} 레포트 기간 내 뉴스가 없습니다."
@@ -744,6 +1016,8 @@ async def get_company_report(
         if current_chunk:
             chunks.append(current_chunk)
         
+        logger.info(f"청크 생성 완료: {len(chunks)}개 청크")
+        
         # 기간에 따른 요약 프롬프트 설정
         period_from = report_data["period"]["from"]
         period_to = report_data["period"]["to"]
@@ -769,6 +1043,8 @@ async def get_company_report(
 
         user_prompt = prompts.get(report_type, prompts["daily"]) + "\n\n각 기사의 중요한 내용을 인용할 때는 [기사 ref번호] 형태로 출처를 표시해주세요."
         
+        logger.info("요약 생성 시작")
+        
         # 청크가 여러 개인 경우 각각 요약 후 메타 요약
         final_summary = ""
         if len(chunks) > 1:
@@ -776,6 +1052,7 @@ async def get_company_report(
             
             for i, chunk in enumerate(chunks, 1):
                 try:
+                    logger.info(f"청크 {i}/{len(chunks)} 요약 생성 중...")
                     chunk_response = openai.ChatCompletion.create(
                         model="gpt-4-turbo-preview",
                         messages=[
@@ -788,6 +1065,7 @@ async def get_company_report(
                     
                     chunk_summary = chunk_response.choices[0].message.content
                     chunk_summaries.append(f"파트 {i} 요약: {chunk_summary}")
+                    logger.info(f"청크 {i} 요약 완료 (길이: {len(chunk_summary)}자)")
                 except Exception as e:
                     logger.error(f"청크 {i} 요약 생성 오류: {e}", exc_info=True)
                     chunk_summaries.append(f"파트 {i} 요약: 요약 생성 실패")
@@ -795,6 +1073,7 @@ async def get_company_report(
             # 메타 요약 생성
             meta_summaries_text = "\n\n".join(chunk_summaries)
             try:
+                logger.info("메타 요약 생성 중...")
                 meta_response = openai.ChatCompletion.create(
                     model="gpt-4-turbo-preview",
                     messages=[
@@ -806,12 +1085,14 @@ async def get_company_report(
                 )
                 
                 final_summary = meta_response.choices[0].message.content
+                logger.info(f"메타 요약 완료 (길이: {len(final_summary)}자)")
             except Exception as e:
                 logger.error(f"메타 요약 생성 오류: {e}", exc_info=True)
                 final_summary = "요약 생성 중 오류가 발생했습니다."
         else:
             # 단일 청크일 경우 바로 요약
             try:
+                logger.info("단일 청크 요약 생성 중...")
                 response = openai.ChatCompletion.create(
                     model="gpt-4-turbo-preview",
                     messages=[
@@ -823,6 +1104,7 @@ async def get_company_report(
                 )
                 
                 final_summary = response.choices[0].message.content
+                logger.info(f"요약 완료 (길이: {len(final_summary)}자)")
             except Exception as e:
                 logger.error(f"요약 생성 오류: {e}", exc_info=True)
                 final_summary = "요약 생성 중 오류가 발생했습니다."
@@ -843,6 +1125,7 @@ async def get_company_report(
             })
         
         # 최종 결과 반환
+        logger.info(f"레포트 생성 완료: {company_name}, {report_type}")
         return {
             **report_data,
             "summary": final_summary,
@@ -855,7 +1138,27 @@ async def get_company_report(
         raise
     except Exception as e:
         logger.error(f"기업 레포트 생성 오류: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"기업 레포트 생성 중 오류 발생: {str(e)}")
+        # 상세 오류 정보를 포함한 응답
+        return {
+            "success": False,
+            "error": f"기업 레포트 생성 중 오류 발생: {str(e)}",
+            "company": company_name,
+            "report_type": report_type,
+            "report_type_kr": get_report_type_kr(report_type),
+            "generated_at": datetime.now().isoformat()
+        }
+
+# 레포트 타입에 따른 한글 이름 반환 함수
+def get_report_type_kr(report_type: str) -> str:
+    """레포트 타입에 따른 한글 이름 반환"""
+    report_type_map = {
+        "daily": "일일",
+        "weekly": "주간",
+        "monthly": "월간",
+        "quarterly": "분기별",
+        "yearly": "연간"
+    }
+    return report_type_map.get(report_type, "기본")
 
 @router.get("/watchlist")
 async def get_watchlist_data(
