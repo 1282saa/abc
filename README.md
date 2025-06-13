@@ -8,7 +8,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green.svg)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-*AI-powered news analysis and content creation platform for professional journalists and content creators*
+_AI-powered news analysis and content creation platform for professional journalists and content creators_
 
 </div>
 
@@ -36,6 +36,7 @@
 <td>
 
 **Backend**
+
 - FastAPI (Python 3.8+)
 - OpenAI GPT-4 Turbo
 - BigKinds API Integration
@@ -47,6 +48,7 @@
 <td>
 
 **Frontend**
+
 - React 18.3.1 + TypeScript 5.8.3
 - Vite 6.3.5 (Build Tool)
 - Tailwind CSS 3.3.5
@@ -263,10 +265,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8000'
-    }
-  }
-})
+      "/api": "http://localhost:8000",
+    },
+  },
+});
 ```
 
 ---
@@ -397,3 +399,103 @@ chore: 빌드/설정 변경
 [홈페이지](https://www.seoulecon.com) • [API 문서](http://localhost:8000/api/docs) • [기여 가이드](CONTRIBUTING.md)
 
 </div>
+
+# AI NOVA - 구글 클라우드 런 배포 가이드
+
+## 구글 클라우드 런 배포 방법
+
+### 사전 준비
+
+1. [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) 설치
+2. [Docker](https://docs.docker.com/get-docker/) 설치
+3. Google Cloud 프로젝트 생성 및 결제 계정 연결
+4. 필요한 API 활성화 (Cloud Run, Container Registry 등)
+
+### 로컬에서 도커 이미지 빌드 및 테스트
+
+```bash
+# 도커 이미지 빌드
+docker build -t ainova .
+
+# 로컬에서 실행
+docker run -p 8080:8080 ainova
+```
+
+### 구글 클라우드 런에 배포
+
+#### 방법 1: 수동 배포
+
+```bash
+# 1. Google Cloud에 로그인
+gcloud auth login
+
+# 2. 프로젝트 설정
+gcloud config set project YOUR_PROJECT_ID
+
+# 3. Docker 인증 설정
+gcloud auth configure-docker
+
+# 4. 이미지 빌드 및 태그 지정
+docker build -t gcr.io/YOUR_PROJECT_ID/ainova:latest .
+
+# 5. 이미지 푸시
+docker push gcr.io/YOUR_PROJECT_ID/ainova:latest
+
+# 6. Cloud Run에 배포
+gcloud run deploy ainova \
+  --image gcr.io/YOUR_PROJECT_ID/ainova:latest \
+  --platform managed \
+  --region asia-northeast3 \
+  --allow-unauthenticated \
+  --memory 2Gi \
+  --cpu 1 \
+  --port 8080
+```
+
+#### 방법 2: Cloud Build를 사용한 자동 배포
+
+```bash
+# Cloud Build 트리거 실행
+gcloud builds submit --config cloudbuild.yaml .
+```
+
+### 환경 변수 설정
+
+구글 클라우드 런에서 환경 변수는 두 가지 방법으로 설정할 수 있습니다:
+
+1. **콘솔에서 직접 설정**:
+
+   - Google Cloud Console > Cloud Run > 서비스 선택 > 수정 > 컨테이너, 변수 및 보안 비밀 > 환경 변수 추가
+
+2. **배포 명령어에 포함**:
+   ```bash
+   gcloud run deploy ainova \
+     --image gcr.io/YOUR_PROJECT_ID/ainova:latest \
+     --set-env-vars="BIGKINDS_KEY=your-key,OPENAI_API_KEY=your-key"
+   ```
+
+### 보안 비밀 설정
+
+민감한 정보(API 키 등)는 Secret Manager를 사용하여 관리하는 것이 좋습니다:
+
+```bash
+# 1. 보안 비밀 생성
+gcloud secrets create OPENAI_API_KEY --data-file=./openai-key.txt
+
+# 2. 서비스 계정에 접근 권한 부여
+gcloud secrets add-iam-policy-binding OPENAI_API_KEY \
+  --member=serviceAccount:YOUR_SERVICE_ACCOUNT \
+  --role=roles/secretmanager.secretAccessor
+
+# 3. 배포 시 보안 비밀 참조
+gcloud run deploy ainova \
+  --image gcr.io/YOUR_PROJECT_ID/ainova:latest \
+  --set-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest
+```
+
+## 문제 해결
+
+- **로그 확인**: `gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=ainova"`
+- **컨테이너 상태 확인**: Google Cloud Console > Cloud Run > 서비스 선택 > 수정 > 컨테이너 탭
+- **메모리/CPU 부족**: 리소스 할당량 증가 고려
+- **타임아웃 오류**: 요청 시간 초과 설정 확인 (기본 60초)

@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from dotenv import load_dotenv
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import logging
 import httpx
 
@@ -91,10 +93,32 @@ async def health_check():
         "version": app.version,
     }
 
-@app.get("/")
-async def root():
-    """루트 경로 리디렉션"""
-    return {"message": "AI NOVA API 서버에 오신 것을 환영합니다. API 문서는 /api/docs에서 확인하세요."}
+# 정적 파일 서빙 설정 (프론트엔드 빌드 결과물)
+frontend_path = PROJECT_ROOT / "frontend" / "dist"
+if frontend_path.exists():
+    app.mount("/assets", StaticFiles(directory=str(frontend_path / "assets")), name="static")
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """프론트엔드 라우팅을 위한 모든 경로 처리"""
+        # API 경로는 처리하지 않음
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+            
+        # 정적 파일 경로 확인
+        requested_path = frontend_path / full_path
+        if requested_path.exists() and requested_path.is_file():
+            return FileResponse(str(requested_path))
+            
+        # 존재하지 않는 경로는 index.html로 리다이렉트 (SPA 라우팅)
+        return FileResponse(str(frontend_path / "index.html"))
+else:
+    logger.warning(f"프론트엔드 빌드 경로를 찾을 수 없습니다: {frontend_path}")
+    
+    @app.get("/")
+    async def root():
+        """루트 경로 리디렉션"""
+        return {"message": "AI NOVA API 서버에 오신 것을 환영합니다. API 문서는 /api/docs에서 확인하세요."}
 
 def start():
     """서버 시작 함수"""

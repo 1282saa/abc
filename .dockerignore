@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Node.js
+node_modules
+npm-debug.log
+frontend/node_modules
+frontend/dist
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 로그 및 캐시
+logs/
+*.log
+cache/
+.DS_Store
+
+# 환경 변수 (Cloud Run에서 별도로 주입)
+.env
+.env.local
+.env.*.local 

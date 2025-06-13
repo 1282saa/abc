@@ -1,0 +1,21 @@
+env_variables:
+  # 서버 설정
+  HOST: "0.0.0.0"
+  PORT: "8080"
+
+  # 로깅 설정
+  LOG_LEVEL: "INFO"
+
+  # 모델 설정
+  EMBEDDING_MODEL: "text-embedding-ada-002"
+  LLM_MODEL: "gpt-4-turbo-preview"
+  LLM_TEMPERATURE: "0.3"
+
+  # 성능 설정
+  MAX_RETRIES: "3"
+  REQUEST_TIMEOUT: "30"
+  CACHE_TTL: "3600"
+
+  # 여기에 다른 환경 변수를 추가하세요
+  # BigKinds API 키, OpenAI API 키 등은
+  # 구글 클라우드 콘솔에서 비밀 환경 변수로 설정하는 것이 좋습니다.

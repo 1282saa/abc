@@ -1,0 +1,35 @@
+steps:
+  # 도커 이미지 빌드
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-t", "gcr.io/$PROJECT_ID/ainova:$COMMIT_SHA", "."]
+
+  # 빌드된 이미지를 Container Registry에 푸시
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/ainova:$COMMIT_SHA"]
+
+  # 클라우드 런에 배포
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "ainova"
+      - "--image"
+      - "gcr.io/$PROJECT_ID/ainova:$COMMIT_SHA"
+      - "--region"
+      - "asia-northeast3" # 서울 리전
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated" # 공개 접근 허용
+      - "--memory"
+      - "2Gi" # 메모리 할당
+      - "--cpu"
+      - "1" # CPU 할당
+      - "--port"
+      - "8080" # 컨테이너 포트
+
+# 이미지 저장
+images:
+  - "gcr.io/$PROJECT_ID/ainova:$COMMIT_SHA"
+
+timeout: "1800s" # 30분
