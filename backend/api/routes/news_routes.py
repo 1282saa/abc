@@ -59,6 +59,19 @@ class AISummaryRequest(BaseModel):
     """AI 요약 요청 모델"""
     news_ids: List[str] = Field(..., description="요약할 뉴스 ID 리스트 (최대 5개)", max_items=5)
 
+# 모델 정의 섹션에 관심종목 관련 모델 추가
+class WatchlistAddRequest(BaseModel):
+    """관심종목 추가 요청 모델"""
+    name: str = Field(..., description="기업명")
+    code: str = Field(..., description="종목코드")
+    category: str = Field(..., description="카테고리")
+
+class WatchlistResponse(BaseModel):
+    """관심종목 응답 모델"""
+    success: bool = Field(description="성공 여부")
+    message: str = Field(description="응답 메시지")
+    watchlist: Optional[List[Dict[str, Any]]] = Field(None, description="관심종목 목록")
+
 # 엔드포인트 정의
 @router.get("/latest", response_model=LatestNewsResponse)
 async def get_latest_news(
@@ -543,16 +556,16 @@ async def generate_ai_summary_stream(
 ):
     """선택된 뉴스 기사들의 AI 요약 생성 (스트리밍)
     
-    실시간으로 생성 과정을 스트리밍하며, 기사 참조 정보를 포함합니다.
+    ChatGPT 스타일로 실시간 진행 상황을 보여주며 요약을 생성합니다.
     """
     logger = setup_logger("api.news.ai_summary_stream")
     logger.info(f"AI 요약 스트리밍 요청: {len(request.news_ids)}개 기사")
     
     async def generate():
         try:
-            # 1단계: 기사 수집
-            yield f"data: {json.dumps({'step': '기사 수집 중...', 'progress': 10}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.1)
+            # 1단계: 기사 수집 시작
+            yield f"data: {json.dumps({'step': '📰 선택된 기사들을 수집하고 있습니다...', 'progress': 10, 'type': 'thinking'}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.5)
             
             # OpenAI API 키 설정
             openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -570,35 +583,30 @@ async def generate_ai_summary_stream(
                 yield f"data: {json.dumps({'error': '선택된 뉴스를 찾을 수 없습니다'}, ensure_ascii=False)}\n\n"
                 return
             
-            # 2단계: 기사 분석 중
-            yield f"data: {json.dumps({'step': f'{len(articles)}개 기사 분석 중...', 'progress': 30}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.1)
+            # 2단계: 기사 분석 시작
+            yield f"data: {json.dumps({'step': f'✅ {len(articles)}개 기사를 수집했습니다. 내용을 분석하고 있습니다...', 'progress': 25, 'type': 'thinking'}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.8)
             
-            # 기사 내용 준비 및 참조 정보 구성
+            # 기사 내용 준비
             articles_text = ""
             article_refs = []
-            
             for i, article in enumerate(articles, 1):
                 title = article.get("title", "")
                 content = article.get("content", "") or article.get("summary", "")
-                provider = article.get("provider", "") or "알 수 없음"
+                provider = article.get("provider", "")
                 published_at = article.get("published_at", "")
                 byline = article.get("byline", "")
-                article_id = article.get("id", "")
-                url = article.get("url", "")
                 
-                # 참조 정보 저장
+                ref_id = f"ref{i}"
                 article_refs.append({
-                    "ref_id": f"ref{i}",
+                    "ref_id": ref_id,
                     "title": title,
                     "provider": provider,
                     "published_at": published_at,
-                    "byline": byline,
-                    "id": article_id,
-                    "url": url
+                    "url": article.get("url", "")
                 })
                 
-                articles_text += f"[기사 ref{i}]\n"
+                articles_text += f"[기사 {ref_id}]\n"
                 articles_text += f"제목: {title}\n"
                 articles_text += f"언론사: {provider}\n"
                 if byline:
@@ -606,47 +614,44 @@ async def generate_ai_summary_stream(
                 articles_text += f"발행일: {published_at}\n"
                 articles_text += f"내용: {content}\n\n"
             
-            # 3단계: AI 분석 시작
-            yield f"data: {json.dumps({'step': 'AI가 분석을 시작합니다...', 'progress': 50}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.1)
+            # 3단계: 핵심 이슈 파악
+            yield f"data: {json.dumps({'step': '🔍 핵심 이슈와 주요 키워드를 파악하고 있습니다...', 'progress': 40, 'type': 'thinking'}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(1.0)
             
-            # 개선된 프롬프트 (기사 참조 포함)
+            # 4단계: 인용문 추출
+            yield f"data: {json.dumps({'step': '💬 중요한 인용문과 발언을 찾고 있습니다...', 'progress': 55, 'type': 'thinking'}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.7)
+            
+            # 5단계: 수치 데이터 분석
+            yield f"data: {json.dumps({'step': '📊 주요 수치와 통계 데이터를 분석하고 있습니다...', 'progress': 70, 'type': 'thinking'}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.8)
+            
+            # 6단계: AI 요약 생성 시작
+            yield f"data: {json.dumps({'step': '🤖 AI가 종합적인 요약을 생성하고 있습니다...', 'progress': 85, 'type': 'thinking'}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.5)
+            
+            # 통합된 요약 프롬프트 설정
             system_prompt = """당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 종합적인 요약을 제공해주세요.
-
-중요한 지침:
-1. 인용이나 참조 시 반드시 [ref번호] 형태로 출처를 명시하세요
-2. 직접 인용구는 큰따옴표와 함께 출처를 표시하세요
-3. 통계나 수치 데이터도 출처를 명시하세요
 
 요약에는 다음 세 가지 측면을 모두 포함해야 합니다:
 1. 핵심 이슈: 주요 이슈와 동향을 파악하고 그 중요도와 영향을 분석
-2. 주요 인용문: 중요한 인물의 발언과 그 맥락 및 의미 분석  
+2. 주요 인용문: 중요한 인물의 발언과 그 맥락 및 의미 분석
 3. 주요 수치 데이터: 핵심 통계와 수치 데이터 및 그 의미 분석
+
+각 기사를 인용할 때는 반드시 [기사 ref번호] 형태로 출처를 표시해주세요.
 
 JSON 형태로 응답해주세요:
 {
   "title": "종합 뉴스 요약",
-  "summary": "전체 요약 내용 (출처 [ref번호] 포함)",
-  "key_points": ["핵심 포인트1 [ref번호]", "핵심 포인트2 [ref번호]", ...],
-  "key_quotes": [{"source": "발언자1", "quote": "인용문1", "ref": "ref번호"}, ...],
-  "key_data": [{"metric": "지표명1", "value": "수치1", "context": "맥락1", "ref": "ref번호"}, ...]
+  "summary": "전체 요약 내용 (인용 시 [기사 ref번호] 포함)",
+  "key_points": ["핵심 포인트1", "핵심 포인트2", ...],
+  "key_quotes": [{"source": "발언자1", "quote": "인용문1", "ref": "ref1"}, ...],
+  "key_data": [{"metric": "지표명1", "value": "수치1", "context": "맥락1", "ref": "ref1"}, ...]
 }"""
 
-            user_prompt = f"""다음 {len(articles)}개의 뉴스 기사를 분석하여 종합적으로 요약해주세요.
-
-{articles_text}
-
-요구사항:
-1. 핵심 이슈 3-5개를 명확히 파악
-2. 중요한 인용문과 발언자 식별
-3. 핵심 수치와 통계 데이터 추출
-4. 모든 내용에 기사 참조 [ref번호] 포함
-5. JSON 형태로 응답"""
+            user_prompt = f"다음 {len(articles)}개의 뉴스 기사를 분석하여 종합적으로 요약해주세요. 각 기사의 중요한 내용을 인용할 때는 [기사 ref번호] 형태로 출처를 표시해주세요.\n\n{articles_text}\n\n요구사항:\n1. 핵심 이슈 3-5개를 명확히 파악\n2. 중요한 인용문과 발언자 식별\n3. 핵심 수치와 통계 데이터 추출\n4. JSON 형태로 응답"
             
-            # 4단계: OpenAI API 호출
-            yield f"data: {json.dumps({'step': 'AI 요약 생성 중...', 'progress': 70}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.1)
-            
+            # OpenAI GPT-4 Turbo로 요약 생성
             try:
                 response = openai.ChatCompletion.create(
                     model="gpt-4-turbo-preview",
@@ -654,27 +659,21 @@ JSON 형태로 응답해주세요:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=2500,
+                    max_tokens=2000,
                     temperature=0.3,
                     stream=True  # 스트리밍 활성화
                 )
                 
-                # 5단계: 스트리밍 응답 처리
-                yield f"data: {json.dumps({'step': '요약 내용을 실시간으로 생성 중...', 'progress': 80}, ensure_ascii=False)}\n\n"
+                # 7단계: 실시간 요약 생성
+                yield f"data: {json.dumps({'step': '✍️ 요약을 실시간으로 생성하고 있습니다...', 'progress': 90, 'type': 'generating'}, ensure_ascii=False)}\n\n"
                 
                 collected_content = ""
                 for chunk in response:
-                    if chunk.choices[0].delta.get('content'):
+                    if chunk.choices[0].delta.get("content"):
                         content_chunk = chunk.choices[0].delta.content
                         collected_content += content_chunk
-                        
-                        # 실시간으로 텍스트 전송
-                        yield f"data: {json.dumps({'chunk': content_chunk}, ensure_ascii=False)}\n\n"
-                        await asyncio.sleep(0.01)  # 자연스러운 스트리밍을 위한 딜레이
-                
-                # 6단계: JSON 파싱 및 최종 결과
-                yield f"data: {json.dumps({'step': '결과 정리 중...', 'progress': 90}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.1)
+                        # 실시간으로 생성되는 내용 전송
+                        yield f"data: {json.dumps({'chunk': content_chunk, 'type': 'content'}, ensure_ascii=False)}\n\n"
                 
                 # JSON 파싱
                 try:
@@ -707,7 +706,7 @@ JSON 형태로 응답해주세요:
                         "articles_analyzed": len(articles),
                         "generated_at": datetime.now().isoformat(),
                         "model_used": "gpt-4-turbo-preview",
-                        "article_references": article_refs  # 기사 참조 정보 추가
+                        "article_references": article_refs
                     }
                     
                 except json.JSONDecodeError:
@@ -723,7 +722,7 @@ JSON 형태로 응답해주세요:
                     }
                 
                 # 완료
-                yield f"data: {json.dumps({'step': '완료!', 'progress': 100, 'result': summary_result}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'step': '✅ 요약 생성이 완료되었습니다!', 'progress': 100, 'result': summary_result, 'type': 'complete'}, ensure_ascii=False)}\n\n"
                 
             except Exception as e:
                 logger.error(f"OpenAI API 오류: {e}", exc_info=True)
@@ -1574,3 +1573,136 @@ async def search_by_question(
     except Exception as e:
         logger.error(f"질문 검색 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"질문 검색 중 오류 발생: {str(e)}")
+
+@router.post("/watchlist", response_model=WatchlistResponse)
+async def add_to_watchlist(
+    request: WatchlistAddRequest,
+    bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)
+):
+    """관심종목에 기업 추가
+    
+    사용자의 관심종목 목록에 새로운 기업을 추가합니다.
+    """
+    logger = setup_logger("api.news.watchlist_add")
+    logger.info(f"관심종목 추가 요청: {request.name} ({request.code})")
+    
+    try:
+        # TODO: 실제 구현에서는 데이터베이스에 저장
+        # 현재는 메모리 기반 임시 구현
+        
+        # 기업 정보 검증 (BigKinds API로 실제 존재하는 기업인지 확인)
+        try:
+            # 최근 7일간 뉴스가 있는지 확인하여 유효한 기업인지 검증
+            news_data = bigkinds_client.get_company_news_for_summary(
+                company_name=request.name,
+                days=30,  # 30일로 확장하여 검증
+                limit=1
+            )
+            
+            # 뉴스가 전혀 없으면 잘못된 기업명일 가능성
+            if news_data.get("total_found", 0) == 0:
+                logger.warning(f"기업 '{request.name}'에 대한 뉴스를 찾을 수 없습니다")
+                return WatchlistResponse(
+                    success=False,
+                    message=f"'{request.name}' 기업에 대한 뉴스를 찾을 수 없습니다. 기업명을 확인해주세요."
+                )
+                
+        except Exception as e:
+            logger.warning(f"기업 검증 중 오류: {e}")
+            # 검증 실패해도 추가는 허용 (API 오류일 수 있음)
+        
+        # 관심종목 목록 로드 (실제로는 DB에서 사용자별로 관리)
+        # 현재는 세션 기반 임시 구현
+        watchlist_key = "user_watchlist"  # 실제로는 사용자 ID 기반
+        
+        # 임시 저장소 (실제로는 Redis나 DB 사용)
+        if not hasattr(add_to_watchlist, '_watchlist_storage'):
+            add_to_watchlist._watchlist_storage = {}
+        
+        user_watchlist = add_to_watchlist._watchlist_storage.get(watchlist_key, [])
+        
+        # 중복 확인
+        existing_item = next((item for item in user_watchlist if item["code"] == request.code), None)
+        if existing_item:
+            return WatchlistResponse(
+                success=False,
+                message=f"'{request.name}' 기업이 이미 관심종목에 등록되어 있습니다."
+            )
+        
+        # 새 항목 추가
+        new_item = {
+            "name": request.name,
+            "code": request.code,
+            "category": request.category,
+            "added_at": datetime.now().isoformat(),
+            "recent_news_count": 0,
+            "has_recent_news": False
+        }
+        
+        user_watchlist.append(new_item)
+        add_to_watchlist._watchlist_storage[watchlist_key] = user_watchlist
+        
+        logger.info(f"관심종목 추가 완료: {request.name} ({request.code})")
+        
+        return WatchlistResponse(
+            success=True,
+            message=f"'{request.name}' 기업이 관심종목에 추가되었습니다.",
+            watchlist=user_watchlist
+        )
+        
+    except Exception as e:
+        logger.error(f"관심종목 추가 오류: {e}", exc_info=True)
+        return WatchlistResponse(
+            success=False,
+            message=f"관심종목 추가 중 오류가 발생했습니다: {str(e)}"
+        )
+
+@router.delete("/watchlist/{stock_code}", response_model=WatchlistResponse)
+async def remove_from_watchlist(
+    stock_code: str = Path(..., description="삭제할 종목코드"),
+    bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)
+):
+    """관심종목에서 기업 삭제
+    
+    사용자의 관심종목 목록에서 기업을 삭제합니다.
+    """
+    logger = setup_logger("api.news.watchlist_remove")
+    logger.info(f"관심종목 삭제 요청: {stock_code}")
+    
+    try:
+        # 관심종목 목록 로드 (실제로는 DB에서 사용자별로 관리)
+        watchlist_key = "user_watchlist"  # 실제로는 사용자 ID 기반
+        
+        # 임시 저장소 접근
+        if not hasattr(add_to_watchlist, '_watchlist_storage'):
+            add_to_watchlist._watchlist_storage = {}
+        
+        user_watchlist = add_to_watchlist._watchlist_storage.get(watchlist_key, [])
+        
+        # 삭제할 항목 찾기
+        item_to_remove = next((item for item in user_watchlist if item["code"] == stock_code), None)
+        
+        if not item_to_remove:
+            return WatchlistResponse(
+                success=False,
+                message=f"종목코드 '{stock_code}'가 관심종목에 없습니다."
+            )
+        
+        # 항목 삭제
+        user_watchlist = [item for item in user_watchlist if item["code"] != stock_code]
+        add_to_watchlist._watchlist_storage[watchlist_key] = user_watchlist
+        
+        logger.info(f"관심종목 삭제 완료: {item_to_remove['name']} ({stock_code})")
+        
+        return WatchlistResponse(
+            success=True,
+            message=f"'{item_to_remove['name']}' 기업이 관심종목에서 삭제되었습니다.",
+            watchlist=user_watchlist
+        )
+        
+    except Exception as e:
+        logger.error(f"관심종목 삭제 오류: {e}", exc_info=True)
+        return WatchlistResponse(
+            success=False,
+            message=f"관심종목 삭제 중 오류가 발생했습니다: {str(e)}"
+        )

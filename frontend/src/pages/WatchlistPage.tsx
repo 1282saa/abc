@@ -3,7 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { containerVariants, itemVariants } from "../animations/pageAnimations";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import ErrorMessage from "../components/common/ErrorMessage";
+import ThinkingProgress from "../components/ai/ThinkingProgress";
 import { useNavigate, useLocation } from "react-router-dom";
+// 레포트 생성 기능은 이제 CategoryDetailPage에서 제공
+import { generateAISummaryStream, AISummaryRequest } from "../services/api";
 
 interface Company {
   name: string;
@@ -181,6 +184,13 @@ const CompanyCard: React.FC<{
     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
       종목코드: {company.code}
     </p>
+    <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+      <ReportGeneratorButton
+        companyName={company.name}
+        companyCode={company.code}
+        className="w-full"
+      />
+    </div>
   </motion.div>
 );
 
@@ -685,6 +695,10 @@ const AISummarySidebar: React.FC<{
   summaryResult: SummaryResult | null;
   isGenerating: boolean;
   onClose: () => void;
+  streamingStep?: string;
+  streamingProgress?: number;
+  streamingContent?: string;
+  streamingType?: string;
 }> = ({
   isVisible,
   selectedArticles,
@@ -692,208 +706,209 @@ const AISummarySidebar: React.FC<{
   summaryResult,
   isGenerating,
   onClose,
+  streamingStep = "",
+  streamingProgress = 0,
+  streamingContent = "",
+  streamingType = "thinking",
 }) => {
   return (
     <motion.div
       initial={{ x: 400 }}
       animate={{ x: isVisible ? 0 : 350 }}
       transition={{ type: "spring", damping: 25, stiffness: 120 }}
-      className="fixed top-0 right-0 h-screen w-96 bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 z-40 overflow-hidden"
+      className="fixed top-0 right-0 h-screen w-96 bg-white dark:bg-gray-900 shadow-2xl z-50 border-l border-gray-200 dark:border-gray-700"
     >
-      {/* 사이드바 토글 버튼 */}
-      <button
-        onClick={onClose}
-        className={`absolute top-1/2 left-0 transform -translate-y-1/2 -translate-x-1/2 w-10 h-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-l-xl flex items-center justify-center shadow-lg hover:shadow-xl transition-all ${
-          isVisible ? "rotate-0" : "rotate-180"
-        }`}
-        aria-label={isVisible ? "사이드바 닫기" : "사이드바 열기"}
-      >
-        <div className="flex items-center justify-center w-full h-full bg-gradient-to-r from-primary-50 to-primary-100 dark:from-primary-900/30 dark:to-primary-800/30">
-          <svg
-            className="w-5 h-5 text-primary-600 dark:text-primary-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+      <div className="flex flex-col h-full">
+        {/* 헤더 */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            AI 요약 분석
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-        </div>
-      </button>
-
-      <div className="h-full overflow-y-auto">
-        <div className="p-6 space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">AI 요약 분석</h2>
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-3 h-3 rounded-full ${
-                  selectedArticles.length > 0
-                    ? "bg-green-400 animate-pulse"
-                    : "bg-gray-300"
-                }`}
-              />
-              <span className="text-sm text-gray-500">
-                {selectedArticles.length}/5
-              </span>
-            </div>
-          </div>
-
-          {!summaryResult && !isGenerating && (
-            <>
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                <h3 className="font-semibold mb-2">선택된 기사</h3>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {selectedArticles.length > 0 ? (
-                    selectedArticles.map((article) => (
-                      <div
-                        key={article.id}
-                        className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
-                      >
-                        <p className="font-medium text-sm line-clamp-2">
-                          {article.title}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {article.provider}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500">
-                      타임라인에서 기사를 선택해주세요.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  onClick={onGenerateSummary}
-                  disabled={selectedArticles.length === 0}
-                  className={`w-full px-4 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${
-                    selectedArticles.length > 0
-                      ? "bg-primary-500 hover:bg-primary-600 text-white"
-                      : "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
-                  }`}
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                    />
-                  </svg>
-                  AI 요약 생성하기
-                </motion.button>
-              </div>
-            </>
-          )}
-
-          {isGenerating && (
-            <div className="text-center py-12">
-              <LoadingSpinner />
-              <p className="mt-4 text-gray-600 dark:text-gray-400">
-                AI가 요약을 생성하고 있습니다...
-              </p>
-            </div>
-          )}
-
-          {summaryResult && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-6"
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              <div>
-                <h3 className="text-xl font-semibold mb-2">
-                  {summaryResult.title}
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  {summaryResult.summary}
-                </p>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        {/* 선택된 기사 정보 */}
+        <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            <span>선택된 기사: {selectedArticles.length}개</span>
+          </div>
+        </div>
+
+        {/* 컨텐츠 영역 */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {!isGenerating && !summaryResult && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900 dark:to-indigo-900 rounded-full flex items-center justify-center">
+                <svg
+                  className="w-8 h-8 text-blue-600 dark:text-blue-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                  />
+                </svg>
               </div>
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                선택한 기사들을 AI가 분석하여
+                <br />
+                핵심 내용을 요약해드립니다
+              </p>
+              <button
+                onClick={onGenerateSummary}
+                disabled={selectedArticles.length === 0}
+                className={`px-6 py-3 rounded-lg font-medium transition-all flex items-center gap-2 mx-auto ${
+                  selectedArticles.length > 0
+                    ? "bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105"
+                    : "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
+                }`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+                AI 요약 생성
+              </button>
+            </div>
+          )}
 
-              {summaryResult.key_points &&
-                summaryResult.key_points.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-3">핵심 포인트</h4>
-                    <ul className="space-y-2">
-                      {summaryResult.key_points.map((point, index) => (
-                        <li key={index} className="flex items-start">
-                          <span className="text-primary-500 mr-2">•</span>
-                          <span className="text-gray-700 dark:text-gray-300">
-                            {point}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+          {/* ThinkingProgress 컴포넌트 사용 */}
+          {isGenerating && (
+            <div className="space-y-4">
+              <ThinkingProgress
+                step={streamingStep}
+                progress={streamingProgress}
+                type={streamingType === "thinking" ? "thinking" : "content"}
+                isGenerating={isGenerating}
+              />
 
-              {summaryResult.key_quotes &&
-                summaryResult.key_quotes.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-3">주요 인용문</h4>
-                    <div className="space-y-3">
-                      {summaryResult.key_quotes.map((quote, index) => (
-                        <div
-                          key={index}
-                          className="pl-4 border-l-4 border-primary-500"
-                        >
-                          <p className="italic text-gray-700 dark:text-gray-300">
-                            "{quote.quote}"
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            - {quote.source}
-                          </p>
-                        </div>
-                      ))}
+              {/* 실시간 컨텐츠 */}
+              {streamingContent && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                  <div className="prose dark:prose-invert max-w-none">
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                      {streamingContent}
+                      <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1"></span>
                     </div>
-                  </div>
-                )}
-
-              {summaryResult.key_data && summaryResult.key_data.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-3">주요 수치</h4>
-                  <div className="grid grid-cols-1 gap-4">
-                    {summaryResult.key_data.map((data, index) => (
-                      <div
-                        key={index}
-                        className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg"
-                      >
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {data.metric}
-                        </p>
-                        <p className="text-xl font-bold text-primary-600 dark:text-primary-400">
-                          {data.value}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {data.context}
-                        </p>
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}
+            </div>
+          )}
 
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-500">
-                  {summaryResult.articles_analyzed}개 기사 분석 완료 ·{" "}
-                  {new Date(summaryResult.generated_at).toLocaleString()}
+          {/* 완성된 요약 결과 */}
+          {summaryResult && !isGenerating && (
+            <div className="space-y-4">
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg p-4 border border-green-200 dark:border-green-700">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                    <svg
+                      className="w-3 h-3 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                  <h4 className="font-semibold text-green-800 dark:text-green-200">
+                    분석 완료
+                  </h4>
+                </div>
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  {summaryResult.articles_analyzed}개 기사를 분석하여 요약을
+                  생성했습니다.
                 </p>
               </div>
-            </motion.div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                <h4 className="font-semibold text-gray-900 dark:text-white mb-3">
+                  {summaryResult.title}
+                </h4>
+                <div className="prose dark:prose-invert max-w-none">
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {summaryResult.summary}
+                  </div>
+                </div>
+
+                {summaryResult.key_points &&
+                  summaryResult.key_points.length > 0 && (
+                    <div className="mt-4">
+                      <h5 className="font-medium text-gray-900 dark:text-white mb-2">
+                        핵심 포인트
+                      </h5>
+                      <ul className="space-y-1">
+                        {summaryResult.key_points.map((point, index) => (
+                          <li
+                            key={index}
+                            className="flex items-start gap-2 text-sm"
+                          >
+                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2 flex-shrink-0"></span>
+                            <span className="text-gray-700 dark:text-gray-300">
+                              {point}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    생성 시간:{" "}
+                    {new Date(summaryResult.generated_at).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -1294,27 +1309,12 @@ const WatchlistPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [watchlist, setWatchlist] = useState<Company[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
-  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
-  const [selectedArticles, setSelectedArticles] = useState<
-    Map<string, SelectedArticle>
-  >(new Map());
-  const [isLoading, setIsLoading] = useState(false);
+  const [watchlist, setWatchlist] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [showSummarySidebar, setShowSummarySidebar] = useState(false);
-  const [summaryResult, setSummaryResult] = useState<SummaryResult | null>(
-    null
-  );
-  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
-  const [reportResult, setReportResult] = useState<ReportResult | null>(null);
-  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<"seoul" | "all">("seoul"); // 탭 상태 추가
-  const [showLegacyView, setShowLegacyView] = useState(false); // 기존 뷰 표시 여부
 
   useEffect(() => {
     fetchCategories();
-    fetchWatchlistSuggestions();
+    // fetchWatchlistSuggestions();
 
     // 테스트용 하드코딩 데이터
     const testCategories = [
@@ -1406,16 +1406,6 @@ const WatchlistPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (selectedCompany) {
-      // 탭에 따라 다른 필터 적용
-      if (activeTab === "seoul") {
-        fetchCompanyNews(selectedCompany, ["서울경제"]);
-      } else {
-        fetchCompanyNews(selectedCompany); // 전체 언론사
-      }
-    }
-  }, [selectedCompany, activeTab]);
 
   const fetchWatchlistSuggestions = async () => {
     try {
@@ -1424,9 +1414,6 @@ const WatchlistPage: React.FC = () => {
 
       const data = await response.json();
       setWatchlist(data.suggestions);
-      if (data.suggestions.length > 0) {
-        setSelectedCompany(data.suggestions[0]);
-      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다"
@@ -1434,179 +1421,10 @@ const WatchlistPage: React.FC = () => {
     }
   };
 
-  const fetchCompanyNews = async (
-    company: Company,
-    providerFilter?: string[]
-  ) => {
-    setIsLoading(true);
-    setError(null);
-    setSelectedArticles(new Map());
 
-    try {
-      const requestBody: any = {
-        company_name: company.name,
-        limit: 50, // 더 많은 기사를 가져옴
-      };
 
-      // 언론사 필터 추가
-      if (providerFilter) {
-        requestBody.provider = providerFilter;
-      }
 
-      const response = await fetch("/api/news/company", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
 
-      if (!response.ok) throw new Error("기업 뉴스를 불러오는데 실패했습니다");
-
-      const data = await response.json();
-      setTimeline(data.timeline);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다"
-      );
-      // 더미 데이터
-      setTimeline([
-        {
-          date: "2024-01-15",
-          count: 3,
-          articles: [
-            {
-              id: "1",
-              title: `${company.name}, 신규 사업 진출 발표`,
-              summary:
-                "새로운 사업 영역으로 확장하며 성장 동력 확보에 나섰다...",
-              provider: "서울경제",
-              url: "#",
-              category: "기업",
-              byline: "홍길동 기자",
-              images: [],
-            },
-            {
-              id: "2",
-              title: `${company.name} 4분기 실적 전망 상향`,
-              summary: "애널리스트들이 4분기 실적 전망을 상향 조정했다...",
-              provider: "한국경제",
-              url: "#",
-              category: "증권",
-              byline: "김철수 기자",
-              images: [],
-            },
-          ],
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const toggleArticleSelection = (article: NewsArticle) => {
-    const newSelected = new Map(selectedArticles);
-
-    if (newSelected.has(article.id)) {
-      newSelected.delete(article.id);
-    } else if (newSelected.size < 5) {
-      newSelected.set(article.id, { ...article, isSelected: true });
-    }
-
-    setSelectedArticles(newSelected);
-  };
-
-  const handleGenerateSummary = async () => {
-    setIsGeneratingSummary(true);
-    setSummaryResult(null);
-
-    // 사이드바가 닫혀있으면 열기
-    if (!showSummarySidebar) {
-      setShowSummarySidebar(true);
-    }
-
-    try {
-      const response = await fetch("/api/news/ai-summary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          news_ids: Array.from(selectedArticles.keys()),
-        }),
-      });
-
-      if (!response.ok) throw new Error("AI 요약 생성에 실패했습니다");
-
-      const data = await response.json();
-      setSummaryResult(data);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "알 수 없는 오류가 발생했습니다"
-      );
-    } finally {
-      setIsGeneratingSummary(false);
-    }
-  };
-
-  // 레포트 생성 함수 추가
-  const handleGenerateReport = async (type: ReportType) => {
-    if (!selectedCompany) return;
-
-    setIsGeneratingReport(true);
-    setReportResult(null);
-
-    // 디버깅을 위한 로그 추가
-    console.log(`레포트 생성 요청: ${selectedCompany.name}, 타입: ${type}`);
-    const apiUrl = `/api/news/company/${selectedCompany.name}/report/${type}`;
-    console.log(
-      `호출 URL: ${apiUrl}, 전체 URL: ${window.location.origin}${apiUrl}`
-    );
-
-    try {
-      // API 요청 시작 로그
-      console.log("API 요청 시작...");
-
-      const response = await fetch(apiUrl);
-
-      // 응답 상태 확인
-      console.log(`API 응답 상태: ${response.status} ${response.statusText}`);
-
-      if (!response.ok) {
-        // 오류 응답 상세 처리
-        const errorText = await response.text();
-        console.error(`API 오류 응답: ${errorText}`);
-        throw new Error(`레포트 생성 실패 (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log("레포트 데이터 수신:", data);
-
-      setReportResult(data);
-
-      // URL 상태 업데이트 (뒤로가기를 위한 상태 유지)
-      const params = new URLSearchParams(location.search);
-      params.set("reportType", type);
-      params.set("company", selectedCompany.name);
-
-      // 브라우저 히스토리 업데이트 (URL 변경)
-      navigate(`${location.pathname}?${params.toString()}`, { replace: false });
-    } catch (error) {
-      console.error("레포트 생성 오류:", error);
-      setReportResult({
-        title: "오류",
-        content: `레포트 생성 중 오류가 발생했습니다: ${
-          error instanceof Error ? error.message : "알 수 없는 오류"
-        }`,
-        sources: [],
-      });
-    } finally {
-      setIsGeneratingReport(false);
-    }
-  };
-
-  const viewArticleDetail = (article: NewsArticle) => {
-    navigate(`/news/${article.id}`);
-  };
-
-  const allArticles = timeline.flatMap((item) => item.articles);
-  const topArticles = allArticles.slice(0, 5);
 
   return (
     <motion.div
@@ -1632,322 +1450,41 @@ const WatchlistPage: React.FC = () => {
                 투자 관심 종목들의 최신 뉴스와 AI 분석을 확인하세요
               </p>
             </div>
-            <motion.button
-              onClick={() => setShowLegacyView(!showLegacyView)}
-              className="group flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white/80 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-primary-300 dark:hover:border-primary-600 transition-all backdrop-blur-sm shadow-sm hover:shadow-md"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <svg
-                className="w-4 h-4 transition-transform group-hover:rotate-180"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-              {showLegacyView ? "카테고리 보기" : "기존 종목 보기"}
-            </motion.button>
+            {/* 기존 뷰 토글 버튼 제거 - 카테고리 보기만 사용 */}
           </div>
 
-          {!showLegacyView ? (
-            /* 카테고리 카드 뷰 */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-              {error ? (
-                <div className="col-span-full text-center py-12">
-                  <p className="text-red-500">{error}</p>
-                  <button
-                    onClick={fetchCategories}
-                    className="mt-2 px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
-                  >
-                    다시 시도
-                  </button>
-                </div>
-              ) : categories.length === 0 ? (
-                <div className="col-span-full text-center py-12">
-                  <p className="text-gray-500">카테고리를 불러오는 중...</p>
-                </div>
-              ) : (
-                categories.map((category) => (
-                  <CategoryCard
-                    key={category.key}
-                    category={category}
-                    onClick={() => navigate(`/category/${category.key}`)}
-                  />
-                ))
-              )}
-            </div>
-          ) : (
-            /* 기존 관심 종목 리스트 */
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-              {watchlist.map((company) => (
-                <CompanyCard
-                  key={company.code}
-                  company={company}
-                  isActive={selectedCompany?.code === company.code}
-                  onClick={() => setSelectedCompany(company)}
+          {/* 카테고리 카드 뷰만 표시 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            {error ? (
+              <div className="col-span-full text-center py-12">
+                <p className="text-red-500">{error}</p>
+                <button
+                  onClick={fetchCategories}
+                  className="mt-2 px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
+                >
+                  다시 시도
+                </button>
+              </div>
+            ) : categories.length === 0 ? (
+              <div className="col-span-full text-center py-12">
+                <p className="text-gray-500">카테고리를 불러오는 중...</p>
+              </div>
+            ) : (
+              categories.map((category) => (
+                <CategoryCard
+                  key={category.key}
+                  category={category}
+                  onClick={() => navigate(`/category/${category.key}`)}
                 />
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </motion.div>
 
-        {selectedCompany && showLegacyView && (
-          <>
-            {/* 뉴스 캐러셀 */}
-            <motion.div variants={itemVariants}>
-              <NewsCarousel articles={topArticles} />
-            </motion.div>
+        {/* 기존 종목 관련 UI 제거 - 카테고리 중심으로 변경 */}
+        {/* 이제 개별 종목 페이지(CategoryDetailPage)에서 기간별 레포트 기능 제공 */}
 
-            {/* 타임라인 섹션 */}
-            <motion.div
-              variants={itemVariants}
-              className={`transition-all duration-300 ${
-                showSummarySidebar ? "pr-96" : ""
-              }`}
-            >
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                    뉴스 타임라인
-                  </h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    시간순으로 정렬된 최신 뉴스를 확인하세요
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  {/* AI 요약 토글 버튼 */}
-                  <motion.button
-                    onClick={() => setShowSummarySidebar((prev) => !prev)}
-                    disabled={selectedArticles.size === 0}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                      selectedArticles.size > 0
-                        ? "bg-primary-500 hover:bg-primary-600 text-white shadow-md hover:shadow-lg"
-                        : "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
-                    }`}
-                    whileHover={
-                      selectedArticles.size > 0 ? { scale: 1.02 } : {}
-                    }
-                    whileTap={selectedArticles.size > 0 ? { scale: 0.98 } : {}}
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                      />
-                    </svg>
-                    <span className="hidden sm:inline">
-                      {selectedArticles.size > 0
-                        ? `${selectedArticles.size}개 기사 요약`
-                        : "기사를 선택하세요"}
-                    </span>
-                  </motion.button>
-
-                  {/* 탭 선택 UI */}
-                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-xl p-1.5 border border-gray-200/60 dark:border-gray-700/60 shadow-lg">
-                    <motion.div
-                      className="absolute inset-y-1.5 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-lg shadow-md"
-                      initial={false}
-                      animate={{
-                        x: activeTab === "seoul" ? 0 : "100%",
-                        width: activeTab === "seoul" ? "48%" : "52%",
-                      }}
-                      transition={{
-                        type: "spring",
-                        bounce: 0.2,
-                        duration: 0.6,
-                      }}
-                    />
-
-                    <div className="relative flex">
-                      <button
-                        onClick={() => setActiveTab("seoul")}
-                        className={`relative z-10 px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                          activeTab === "seoul"
-                            ? "text-white shadow-lg"
-                            : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <div
-                            className={`w-2 h-2 rounded-full transition-all ${
-                              activeTab === "seoul"
-                                ? "bg-white"
-                                : "bg-primary-400 opacity-60"
-                            }`}
-                          />
-                          서울경제 타임라인
-                        </span>
-                      </button>
-
-                      <button
-                        onClick={() => setActiveTab("all")}
-                        className={`relative z-10 px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-                          activeTab === "all"
-                            ? "text-white shadow-lg"
-                            : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <div
-                            className={`w-2 h-2 rounded-full transition-all ${
-                              activeTab === "all"
-                                ? "bg-white"
-                                : "bg-secondary-400 opacity-60"
-                            }`}
-                          />
-                          전체 언론사 타임라인
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {error && <ErrorMessage message={error} />}
-
-                {isLoading ? (
-                  <div className="flex justify-center py-12">
-                    <LoadingSpinner />
-                  </div>
-                ) : (
-                  <div className="space-y-10 max-h-[700px] overflow-y-auto pr-2 scrollbar-thin scrollbar-track-gray-100 dark:scrollbar-track-gray-800 scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500">
-                    {timeline.length === 0 ? (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-center py-16"
-                      >
-                        <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <svg
-                            className="w-10 h-10 text-gray-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={1.5}
-                              d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"
-                            />
-                          </svg>
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                          기사가 없습니다
-                        </h3>
-                        <p className="text-gray-500 dark:text-gray-400">
-                          {activeTab === "seoul"
-                            ? "서울경제에 관련 기사가 없습니다."
-                            : "관련 기사가 없습니다."}
-                        </p>
-                      </motion.div>
-                    ) : (
-                      timeline.map((timelineItem, index) => (
-                        <motion.div
-                          key={timelineItem.date}
-                          initial={{ opacity: 0, y: 30 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.1 }}
-                          className="relative"
-                        >
-                          {/* 타임라인 연결선 */}
-                          {index < timeline.length - 1 && (
-                            <div className="absolute left-16 top-12 w-0.5 h-full bg-gradient-to-b from-primary-300 to-transparent dark:from-primary-600" />
-                          )}
-
-                          {/* 날짜 헤더 */}
-                          <div className="flex items-center mb-6">
-                            <div className="relative flex-shrink-0">
-                              <div className="w-32 h-12 bg-gradient-to-r from-primary-500 to-secondary-500 rounded-xl flex items-center justify-center shadow-lg">
-                                <span className="text-white font-bold text-sm">
-                                  {new Date(
-                                    timelineItem.date
-                                  ).toLocaleDateString("ko-KR", {
-                                    month: "short",
-                                    day: "numeric",
-                                  })}
-                                </span>
-                              </div>
-
-                              {/* 독 */}
-                              <div className="absolute -right-1 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-white dark:bg-gray-900 border-2 border-primary-500 rounded-full" />
-                            </div>
-
-                            <div className="flex-grow h-0.5 bg-gradient-to-r from-primary-200 via-gray-200 to-transparent dark:from-primary-700 dark:via-gray-700 ml-4" />
-
-                            <div className="ml-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm px-4 py-2 rounded-full border border-gray-200/60 dark:border-gray-700/60 shadow-sm">
-                              <span className="text-sm font-semibold text-primary-600 dark:text-primary-400">
-                                {timelineItem.count}건
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 기사 목록 */}
-                          <div className="ml-36 space-y-5">
-                            {timelineItem.articles.map(
-                              (article, articleIndex) => (
-                                <motion.div
-                                  key={article.id}
-                                  initial={{ opacity: 0, x: 20 }}
-                                  animate={{ opacity: 1, x: 0 }}
-                                  transition={{
-                                    delay: index * 0.1 + articleIndex * 0.05,
-                                  }}
-                                >
-                                  <NewsArticleCard
-                                    article={{
-                                      ...article,
-                                      isSelected: selectedArticles.has(
-                                        article.id
-                                      ),
-                                    }}
-                                    onToggle={() =>
-                                      toggleArticleSelection(article)
-                                    }
-                                    onViewDetail={() =>
-                                      viewArticleDetail(article)
-                                    }
-                                    showProviderBadge={activeTab === "all"}
-                                  />
-                                </motion.div>
-                              )
-                            )}
-                          </div>
-                        </motion.div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-
-        {/* AI 요약 사이드바 */}
-        <AISummarySidebar
-          isVisible={showSummarySidebar}
-          selectedArticles={Array.from(selectedArticles.values())}
-          onGenerateSummary={handleGenerateSummary}
-          summaryResult={summaryResult}
-          isGenerating={isGeneratingSummary}
-          onClose={() => {
-            setShowSummarySidebar(false);
-            setSummaryResult(null);
-          }}
-        />
+        {/* 레포트 생성 기능은 이제 CategoryDetailPage에서 제공 */}
       </div>
     </motion.div>
   );

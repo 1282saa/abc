@@ -12,6 +12,7 @@ import requests
 import sys
 from typing import Dict, List, Optional, Union, Any, Tuple
 from pathlib import Path
+
 from datetime import datetime, timedelta
 
 from .constants import API_BASE_URL, API_ENDPOINTS, SEOUL_ECONOMIC, DEFAULT_NEWS_FIELDS

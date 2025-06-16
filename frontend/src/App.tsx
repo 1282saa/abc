@@ -11,6 +11,8 @@ import ReportPage from "./pages/ReportPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import SearchPage from "./pages/SearchPage";
 import NewsDetailPage from "./pages/NewsDetailPage";
+import ReportGenerationPage from "./pages/ReportGenerationPage";
+import PeriodReportGenerationPage from "./pages/PeriodReportGenerationPage";
 
 // 다크모드 설정
 type Theme = "light" | "dark";
@@ -52,6 +54,8 @@ const App: React.FC = () => {
         <Route path="/category/:categoryKey" element={<CategoryDetailPage />} />
         <Route path="/stock-calendar" element={<StockCalendarPage />} />
         <Route path="/report" element={<ReportPage />} />
+        <Route path="/reports/generate" element={<ReportGenerationPage />} />
+        <Route path="/reports/period-generate" element={<PeriodReportGenerationPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/news/:newsId" element={<NewsDetailPage />} />
         <Route path="*" element={<NotFoundPage />} />

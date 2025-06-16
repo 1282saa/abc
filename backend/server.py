@@ -36,6 +36,8 @@ from backend.api.routes.news_routes import router as news_router
 from backend.api.routes.related_questions_routes import router as related_questions_router
 from backend.api.routes.proxy_routes import router as proxy_routes
 from backend.api.routes.entity_routes import router as entity_router
+from backend.api.routes.report_routes import router as report_router
+from backend.api.routes.period_report_routes import router as period_report_router
 # from backend.api.routes.ai_summary_routes import router as ai_summary_router
 # from backend.api.routes.watchlist_routes import router as watchlist_router
 
@@ -73,6 +75,8 @@ app.include_router(news_router)
 app.include_router(related_questions_router)
 app.include_router(proxy_routes)
 app.include_router(entity_router)
+app.include_router(report_router)
+app.include_router(period_report_router)
 # app.include_router(ai_summary_router)
 # app.include_router(watchlist_router)
 

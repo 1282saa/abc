@@ -3,8 +3,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import ErrorMessage from "../components/common/ErrorMessage";
+import ThinkingProgress from "../components/ai/ThinkingProgress";
 import { containerVariants, itemVariants } from "../animations/pageAnimations";
 import { generateAISummaryStream } from "../services/api";
+import CompanyPeriodReportButton from "../components/reports/CompanyPeriodReportButton";
 
 // 인터페이스 정의
 interface Entity {
@@ -474,8 +476,17 @@ const CategoryDetailPage: React.FC = () => {
                 </button>
                 </div>
                 
-                {/* AI 요약 토글 버튼 */}
-                <motion.button
+                <div className="flex items-center gap-3">
+                  {/* 기간별 레포트 생성 버튼 */}
+                  {selectedEntity && (
+                    <CompanyPeriodReportButton
+                      companyName={selectedEntity.name}
+                      companyCode={selectedEntity.code}
+                    />
+                  )}
+                  
+                  {/* AI 요약 토글 버튼 */}
+                  <motion.button
                   onClick={() => setShowSummarySidebar(prev => !prev)}
                   disabled={selectedArticles.size === 0}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
@@ -504,7 +515,8 @@ const CategoryDetailPage: React.FC = () => {
                       ? `${selectedArticles.size}개 기사 요약`
                       : '기사를 선택하세요'}
                   </span>
-                </motion.button>
+                  </motion.button>
+                </div>
               </div>
             </motion.div>
 
@@ -826,34 +838,13 @@ const CategoryDetailPage: React.FC = () => {
 
               {isGeneratingSummary && (
                 <div className="py-6 space-y-6">
-                  {/* 진행률 및 단계 표시 */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">AI 요약 생성 중...</h3>
-                      <span className="text-sm text-gray-500">{streamingProgress}%</span>
-                    </div>
-                    
-                    {/* 진행률 바 */}
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                      <motion.div
-                        className="bg-primary-500 h-2 rounded-full"
-                        style={{ width: `${streamingProgress}%` }}
-                        transition={{ duration: 0.3 }}
-                      />
-                    </div>
-                    
-                    {/* 현재 단계 */}
-                    {streamingStep && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full"
-                        />
-                        {streamingStep}
-                      </p>
-                    )}
-                  </div>
+                  {/* ThinkingProgress 컴포넌트 사용 */}
+                  <ThinkingProgress
+                    step={streamingStep}
+                    progress={streamingProgress}
+                    type="thinking"
+                    isGenerating={isGeneratingSummary}
+                  />
 
                   {/* 실시간 스트리밍 텍스트 출력 */}
                   {streamingContent && (

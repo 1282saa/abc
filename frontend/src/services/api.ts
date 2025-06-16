@@ -4,7 +4,7 @@
  */
 
 // Vite 환경 변수는 import.meta.env 를 통해 접근합니다.
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
 // 요청 옵션
 const defaultOptions: RequestInit = {
@@ -203,6 +203,182 @@ export interface RelatedQuestionsResponse {
   questions: RelatedQuestion[];
 }
 
+// 관심종목 추가 요청 인터페이스
+export interface WatchlistAddRequest {
+  name: string;
+  code: string;
+  category: string;
+}
+
+// 관심종목 응답 인터페이스
+export interface WatchlistResponse {
+  success: boolean;
+  message: string;
+  watchlist?: Array<{
+    name: string;
+    code: string;
+    category: string;
+    added_at: string;
+    recent_news_count: number;
+    has_recent_news: boolean;
+  }>;
+}
+
+// 레포트 기간 타입
+export type ReportPeriodType = "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+
+// 레포트 생성 요청 인터페이스
+export interface ReportRequest {
+  company_name: string;
+  company_code?: string;
+  period_type: ReportPeriodType;
+  date_from: string;
+  date_to: string;
+  language?: "ko" | "en";
+  include_charts?: boolean;
+  max_articles?: number;
+}
+
+// 인용 출처 인터페이스
+export interface CitationSource {
+  id: string;
+  title: string;
+  url: string;
+  provider: string;
+  published_at: string;
+  excerpt: string;
+}
+
+// 레포트 섹션 인터페이스
+export interface ReportSection {
+  title: string;
+  content: string;
+  key_points: string[];
+  citations: number[];
+}
+
+// 레포트 메타데이터 인터페이스
+export interface ReportMetadata {
+  company_name: string;
+  company_code?: string;
+  period_type: ReportPeriodType;
+  date_from: string;
+  date_to: string;
+  total_articles: number;
+  generated_at: string;
+  generation_time_seconds: number;
+  model_used: string;
+}
+
+// 기업 레포트 인터페이스
+export interface CompanyReport {
+  metadata: ReportMetadata;
+  executive_summary: string;
+  sections: ReportSection[];
+  citations: CitationSource[];
+  keywords: string[];
+  sentiment_analysis: Record<string, any>;
+  stock_impact?: string;
+}
+
+// 레포트 스트리밍 데이터 인터페이스
+export interface ReportStreamData {
+  type: "progress" | "content" | "section" | "complete" | "error";
+  step?: string;
+  progress?: number;
+  section_title?: string;
+  content?: string;
+  result?: CompanyReport;
+  error?: string;
+}
+
+// 기간별 레포트 관련 인터페이스들
+export interface ReportGenerationProgress {
+  stage: string;
+  progress: number;
+  message: string;
+  current_task?: string;
+  estimated_remaining_seconds?: number;
+}
+
+export enum PeriodReportType {
+  DAILY = "daily",
+  WEEKLY = "weekly", 
+  MONTHLY = "monthly",
+  QUARTERLY = "quarterly",
+  YEARLY = "yearly"
+}
+
+export interface AutoReportRequest {
+  report_type: PeriodReportType;
+  company_name?: string;
+  company_code?: string;
+  target_date?: string;
+  categories: string[];
+  max_articles: number;
+  include_sentiment: boolean;
+  include_keywords: boolean;
+  language: string;
+}
+
+export interface NewsCluster {
+  id: string;
+  title: string;
+  articles_count: number;
+  representative_article_id: string;
+  keywords: string[];
+  categories: string[];
+  sentiment_score?: number;
+  impact_score?: number;
+}
+
+export interface PeriodInsight {
+  type: string;
+  title: string;
+  description: string;
+  confidence: number;
+  supporting_clusters: string[];
+}
+
+export interface CategorySummary {
+  category: string;
+  total_articles: number;
+  top_clusters: NewsCluster[];
+  key_developments: string[];
+  sentiment_trend?: string;
+}
+
+export interface TimelineEvent {
+  date: string;
+  title: string;
+  description: string;
+  importance: number;
+  related_cluster_ids: string[];
+  category: string;
+}
+
+export interface PeriodReport {
+  id: string;
+  report_type: PeriodReportType;
+  company_name?: string;
+  company_code?: string;
+  period_start: string;
+  period_end: string;
+  generated_at: string;
+  total_articles_analyzed: number;
+  categories_covered: string[];
+  analysis_duration_seconds: number;
+  executive_summary: string;
+  key_highlights: string[];
+  category_summaries: CategorySummary[];
+  timeline: TimelineEvent[];
+  insights: PeriodInsight[];
+  top_keywords: Array<{keyword: string; count: number; category: string}>;
+  sentiment_analysis: Record<string, any>;
+  trend_analysis: Record<string, any>;
+  comparison?: Record<string, any>;
+}
+
 // News API 서비스 객체
 const newsApiService = {
   /**
@@ -299,19 +475,24 @@ const newsApiService = {
    */
   async generateAISummaryStream(
     request: AISummaryRequest,
-    onProgress: (data: any) => void,
+    onProgress: (data: {
+      step: string;
+      progress: number;
+      type?: string;
+    }) => void,
     onChunk: (chunk: string) => void,
     onComplete: (result: AISummaryResponse) => void,
     onError: (error: string) => void
   ): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/news/ai-summary-stream`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(request),
-      });
+      const response = await fetch(
+        `${API_BASE_URL}/api/news/ai-summary-stream`,
+        {
+          ...defaultOptions,
+          method: "POST",
+          body: JSON.stringify(request),
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`API 오류: ${response.status}`);
@@ -319,7 +500,7 @@ const newsApiService = {
 
       const reader = response.body?.getReader();
       if (!reader) {
-        throw new Error("스트림 읽기 실패");
+        throw new Error("스트림을 읽을 수 없습니다");
       }
 
       const decoder = new TextDecoder();
@@ -327,43 +508,50 @@ const newsApiService = {
 
       while (true) {
         const { done, value } = await reader.read();
-        
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
+        const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              
+
               if (data.error) {
                 onError(data.error);
                 return;
               }
-              
-              if (data.step && data.progress) {
-                onProgress(data);
+
+              if (data.step && data.progress !== undefined) {
+                onProgress({
+                  step: data.step,
+                  progress: data.progress,
+                  type: data.type || "thinking",
+                });
               }
-              
-              if (data.chunk) {
+
+              if (data.chunk && data.type === "content") {
                 onChunk(data.chunk);
               }
-              
-              if (data.result) {
+
+              if (data.result && data.type === "complete") {
                 onComplete(data.result);
                 return;
               }
             } catch (e) {
-              console.warn('JSON 파싱 실패:', line);
+              console.warn("JSON 파싱 오류:", e);
             }
           }
         }
       }
     } catch (error) {
-      onError(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다");
+      onError(
+        error instanceof Error
+          ? error.message
+          : "알 수 없는 오류가 발생했습니다"
+      );
     }
   },
 
@@ -492,6 +680,331 @@ const newsApiService = {
 
     return response.json();
   },
+
+  /**
+   * 관심종목에 기업 추가
+   */
+  async addToWatchlist(
+    request: WatchlistAddRequest
+  ): Promise<WatchlistResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/news/watchlist`, {
+      ...defaultOptions,
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 관심종목에서 기업 삭제
+   */
+  async removeFromWatchlist(stockCode: string): Promise<WatchlistResponse> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/news/watchlist/${stockCode}`,
+      {
+        ...defaultOptions,
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 기업 레포트 생성 (동기식)
+   */
+  async generateCompanyReport(request: ReportRequest): Promise<CompanyReport> {
+    const response = await fetch(`${API_BASE_URL}/api/reports/company/generate`, {
+      ...defaultOptions,
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 기업 레포트 생성 (스트리밍)
+   */
+  async generateCompanyReportStream(
+    request: ReportRequest,
+    onProgress: (data: ReportStreamData) => void,
+    onComplete: (result: CompanyReport) => void,
+    onError: (error: string) => void
+  ): Promise<void> {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/reports/company/generate-stream`,
+        {
+          ...defaultOptions,
+          method: "POST",
+          body: JSON.stringify(request),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API 오류: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("스트림을 읽을 수 없습니다");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6)) as ReportStreamData;
+
+              if (data.error) {
+                onError(data.error);
+                return;
+              }
+
+              if (data.type === "progress") {
+                onProgress(data);
+              }
+
+              if (data.type === "complete" && data.result) {
+                onComplete(data.result);
+                return;
+              }
+            } catch (e) {
+              console.warn("JSON 파싱 오류:", e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      onError(
+        error instanceof Error
+          ? error.message
+          : "알 수 없는 오류가 발생했습니다"
+      );
+    }
+  },
+
+  /**
+   * 사용 가능한 레포트 템플릿 조회
+   */
+  async getReportTemplates(): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/reports/templates`, {
+      ...defaultOptions,
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 레포트 요청 유효성 검사
+   */
+  async validateReportRequest(request: ReportRequest): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/reports/company/validate`, {
+      ...defaultOptions,
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 기간별 레포트 생성 (동기식)
+   */
+  async generatePeriodReport(request: AutoReportRequest): Promise<PeriodReport> {
+    const response = await fetch(`${API_BASE_URL}/api/period-reports/generate`, {
+      ...defaultOptions,
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 기간별 레포트 생성 (스트리밍)
+   */
+  async generatePeriodReportStream(
+    request: AutoReportRequest,
+    onProgress: (data: ReportGenerationProgress) => void,
+    onComplete: (result: PeriodReport) => void,
+    onError: (error: string) => void
+  ): Promise<void> {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/period-reports/generate-stream`,
+        {
+          ...defaultOptions,
+          method: "POST",
+          body: JSON.stringify(request),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API 오류: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("스트림을 읽을 수 없습니다");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.error) {
+                onError(data.error);
+                return;
+              }
+
+              if (data.stage === "final_result" && data.result) {
+                onComplete(data.result);
+                return;
+              } else if (data.stage && data.progress !== undefined) {
+                onProgress(data as ReportGenerationProgress);
+              }
+            } catch (e) {
+              console.warn("JSON 파싱 오류:", e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      onError(
+        error instanceof Error
+          ? error.message
+          : "알 수 없는 오류가 발생했습니다"
+      );
+    }
+  },
+
+  /**
+   * 기간별 레포트 템플릿 조회
+   */
+  async getPeriodReportTemplates(): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/period-reports/templates`, {
+      ...defaultOptions,
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 빠른 기간별 레포트 생성
+   */
+  async quickGeneratePeriodReport(
+    reportType: PeriodReportType,
+    categories?: string,
+    maxArticles?: number
+  ): Promise<PeriodReport> {
+    const params = new URLSearchParams();
+    if (categories) params.append("categories", categories);
+    if (maxArticles) params.append("max_articles", maxArticles.toString());
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/period-reports/quick-generate/${reportType}?${params}`,
+      {
+        ...defaultOptions,
+        method: "GET",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 기간 정보 조회
+   */
+  async getPeriodInfo(reportType: PeriodReportType): Promise<any> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/period-reports/period-info/${reportType}`,
+      {
+        ...defaultOptions,
+        method: "GET",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * 사용 가능한 카테고리 조회
+   */
+  async getPeriodReportCategories(): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/period-reports/categories`, {
+      ...defaultOptions,
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 오류: ${response.status}`);
+    }
+
+    return response.json();
+  },
 };
 
 export default newsApiService;
@@ -508,4 +1021,19 @@ export const {
   searchNews,
   getStockCalendarEvents,
   getRelatedQuestions,
+  addToWatchlist,
+  removeFromWatchlist,
+  generateCompanyReport,
+  generateCompanyReportStream,
+  getReportTemplates,
+  validateReportRequest,
+  generatePeriodReport,
+  generatePeriodReportStream,
+  getPeriodReportTemplates,
+  quickGeneratePeriodReport,
+  getPeriodInfo,
+  getPeriodReportCategories,
 } = newsApiService;
+
+// API 객체로도 export (기간별 레포트 페이지에서 사용)
+export const api = newsApiService;
