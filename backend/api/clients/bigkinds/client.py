@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from .constants import API_BASE_URL, API_ENDPOINTS, SEOUL_ECONOMIC, DEFAULT_NEWS_FIELDS
 from .formatters import format_news_response, format_issue_ranking_response, format_quotation_response
 from backend.utils.logger import setup_logger
+from backend.utils.query_processor import preprocess_query
 
 class BigKindsClient:
     """빅카인즈 API 클라이언트"""
@@ -26,78 +27,23 @@ class BigKindsClient:
         """빅카인즈 API 클라이언트 초기화
         
         Args:
-            api_key: 빅카인즈 API 키 (단일 키 호환성)
+            api_key: 빅카인즈 API 키
             base_url: API 기본 URL
         """
-        # 다중 API 키 지원
-        self.api_keys = {
-            "general": api_key or os.environ.get("BIGKINDS_KEY_GENERAL", ""),
-            "seoul_economic": os.environ.get("BIGKINDS_KEY_SEOUL", "")
-        }
+        # 단일 API 키 설정
+        self.api_key = api_key or os.environ.get("BIGKINDS_KEY", "")
         
-        # 하위 호환성을 위한 기본 키 설정
-        self.api_key = api_key or os.environ.get("BIGKINDS_KEY", "") or self.api_keys["general"]
-        
-        # 최소 하나의 API 키는 필요
-        if not any(self.api_keys.values()) and not self.api_key:
-            raise ValueError("BigKinds API 키가 필요합니다. 환경변수 BIGKINDS_KEY_GENERAL 또는 BIGKINDS_KEY를 설정하세요.")
-        
-        # 로깅을 위한 키 상태 확인
-        general_key = self.api_keys["general"] or self.api_key
-        seoul_key = self.api_keys["seoul_economic"]
+        # API 키 존재 여부 확인 (없으면 경고만 출력)
+        if not self.api_key:
+            self.logger.warning("BigKinds API 키가 설정되지 않았습니다. 제한된 기능만 사용할 수 있습니다.")
+            self.api_key = "NO_API_KEY"  # 기본값 설정
         
         self.base_url = base_url or API_BASE_URL
         self.logger = setup_logger("api.bigkinds")
         self.timeout = 30
         
         # API 키 상태 로깅
-        self.logger.info(f"BigKinds API 키 상태 - 일반: {'설정됨' if general_key else '미설정'}, 서울경제: {'설정됨' if seoul_key else '미설정'}")
-        
-    def _get_api_key_for_provider(self, provider: Optional[List[str]] = None) -> str:
-        """언론사에 따른 적절한 API 키 선택
-        
-        Args:
-            provider: 언론사 목록
-            
-        Returns:
-            선택된 API 키
-        """
-        self.logger.info(f"API 키 선택 요청 - provider: {provider}")
-        
-        # 서울경제신문이 포함된 경우 전용 키 사용 (전체 본문 접근 가능)
-        if provider and "서울경제" in provider and self.api_keys["seoul_economic"]:
-            self.logger.info(f"서울경제 전용 API 키 사용: {self.api_keys['seoul_economic'][:8]}...")
-            return self.api_keys["seoul_economic"]
-        
-        # 일반 키 사용 (모든 언론사 접근 가능)
-        general_key = self.api_keys["general"] or self.api_key
-        if general_key:
-            self.logger.info(f"일반 API 키 사용: {general_key[:8]}...")
-            return general_key
-            
-        # 마지막 대안으로 서울경제 키 사용
-        if self.api_keys["seoul_economic"]:
-            self.logger.info(f"대안으로 서울경제 API 키 사용: {self.api_keys['seoul_economic'][:8]}...")
-            return self.api_keys["seoul_economic"]
-            
-        raise ValueError("사용 가능한 API 키가 없습니다.")
-        
-    def _get_api_key_for_general_use(self) -> str:
-        """일반적인 용도 (오늘의 이슈 등)에 사용할 API 키 선택
-        
-        Returns:
-            선택된 API 키
-        """
-        # 일반 키 우선 사용
-        general_key = self.api_keys["general"] or self.api_key
-        if general_key:
-            return general_key
-            
-        # 일반 키가 없으면 서울경제 키 사용
-        if self.api_keys["seoul_economic"]:
-            return self.api_keys["seoul_economic"]
-            
-        raise ValueError("사용 가능한 API 키가 없습니다.")
+        self.logger.info("BigKinds API 키가 설정되었습니다.")
         
     def _make_request(self, method: str, endpoint: str, argument: Dict[str, Any] = None, params: Dict[str, Any] = None, provider: Optional[List[str]] = None) -> Dict[str, Any]:
         """빅카인즈 API 요청 실행
@@ -107,18 +53,13 @@ class BigKindsClient:
             endpoint: API 엔드포인트
             argument: POST 요청 시 사용할 argument 데이터
             params: GET 요청 시 사용할 쿼리 파라미터
-            provider: 언론사 목록 (API 키 선택용)
+            provider: 언론사 목록 (현재는 사용되지 않음)
             
         Returns:
             API 응답 데이터
         """
-        # 적절한 API 키 선택
-        if provider:
-            api_key = self._get_api_key_for_provider(provider)
-            self.logger.info(f"Provider 기반 API 키 선택: {provider} -> {api_key[:8]}...")
-        else:
-            api_key = self._get_api_key_for_general_use()
-            self.logger.info(f"일반용 API 키 선택: {api_key[:8]}...")
+        api_key = self.api_key
+        
         # URL 올바르게 구성 (중복 슬래시 방지)
         if self.base_url.endswith('/') and endpoint.startswith('/'):
             url = f"{self.base_url}{endpoint[1:]}"
@@ -168,6 +109,8 @@ class BigKindsClient:
             }
             
             self.logger.info(f"BigKinds API POST 요청: {endpoint}")
+            self.logger.info(f"전체 URL: {url}")
+            self.logger.info(f"API 키: {api_key}")
             self.logger.debug(f"요청 데이터: {json.dumps(request_data, ensure_ascii=False, indent=2)}")
             
             try:
@@ -181,6 +124,8 @@ class BigKindsClient:
                 
                 result = response.json()
                 self.logger.info(f"API 응답 성공: {endpoint}")
+                self.logger.info(f"응답 상태: {response.status_code}")
+                self.logger.info(f"응답 내용 (첫 200자): {str(result)[:200]}")
                 self.logger.debug(f"응답 데이터: {json.dumps(result, ensure_ascii=False, indent=2)}")
                 
                 # result 값 확인 (0=성공, 그 외=오류)
@@ -198,6 +143,99 @@ class BigKindsClient:
                 self.logger.error(f"JSON 디코딩 실패: {e}")
                 raise Exception(f"API 응답 파싱 실패: {str(e)}")
     
+    def search_news_with_fallback(
+        self,
+        keyword: str,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        return_from: int = 0,
+        return_size: int = 10,
+        sort: Union[Dict, List[Dict]] = {"_score": "desc"},
+        provider: Optional[List[str]] = None,
+        category: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        빅카인즈 API 최적화된 다단계 폴백 검색
+        
+        사용자 의도에 맞는 최적의 검색 결과를 제공하기 위해:
+        1. 키워드 전처리 및 의도 분석
+        2. 정확도 우선 → 범위 확대 순으로 다단계 검색
+        3. 실시간성 요구 시 최신 날짜 범위 조정
+        
+        Args:
+            keyword: 사용자 원본 질문 (예: "네이버 주가 실황")
+            date_from: 시작일 (YYYY-MM-DD)  
+            date_to: 종료일 (YYYY-MM-DD)
+            return_size: 반환할 결과 수
+            sort: 정렬 기준 (기본: _score 내림차순)
+            provider: 언론사 목록
+            category: 카테고리 목록
+            
+        Returns:
+            검색 결과
+        """
+        from backend.utils.query_processor import (
+            preprocess_query, create_fallback_queries, analyze_query_intent
+        )
+        
+        # 1. 사용자 질문 분석
+        intent = analyze_query_intent(keyword)
+        self.logger.info(f"질문 분석: {keyword} → {intent}")
+        
+        # 2. 키워드 추출
+        keywords = preprocess_query(keyword)
+        if not keywords:
+            self.logger.warning(f"'{keyword}'에서 유효한 키워드를 추출할 수 없습니다.")
+            return {"result": -1, "reason": "검색할 키워드가 없습니다.", "return_object": {}}
+        
+        self.logger.info(f"추출된 키워드: {keywords}")
+        
+        # 3. 실시간성 요구 시 날짜 범위 조정
+        if intent.get("time_sensitive") and not date_from:
+            # 실시간/최신 요구 시 최근 3일로 제한
+            date_from = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
+            self.logger.info(f"실시간성 요구로 날짜 범위 조정: {date_from} ~ {date_to}")
+        
+        # 4. 다단계 폴백 쿼리 생성
+        fallback_queries = create_fallback_queries(keywords)
+        
+        # 5. 단계별 검색 실행
+        for i, (query, description) in enumerate(fallback_queries, 1):
+            self.logger.info(f"검색 {i}단계 시도: {description}")
+            self.logger.info(f"쿼리: {query}")
+            
+            try:
+                results = self.search_news(
+                    query=query,
+                    date_from=date_from,
+                    date_to=date_to,
+                    return_from=return_from,
+                    return_size=return_size,
+                    sort=sort,
+                    provider=provider,
+                    category=category
+                )
+                
+                total_hits = results.get("return_object", {}).get("total_hits", 0)
+                
+                if total_hits > 0:
+                    self.logger.info(f"✅ {i}단계 검색 성공: {total_hits}개 결과")
+                    return results
+                else:
+                    self.logger.warning(f"❌ {i}단계 검색 결과 없음")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ {i}단계 검색 중 오류: {str(e)}")
+                continue
+        
+        # 6. 모든 검색 실패 시
+        self.logger.error(f"모든 폴백 검색 실패: '{keyword}' → {keywords}")
+        return {
+            "result": -1, 
+            "reason": f"'{keyword}'에 대한 검색 결과가 없습니다. 다른 키워드로 시도해보세요.",
+            "return_object": {"total_hits": 0, "documents": []}
+        }
+
     def search_news(
         self,
         query: str = "",
@@ -206,7 +244,7 @@ class BigKindsClient:
         provider: Optional[List[str]] = None,
         category: Optional[List[str]] = None,
         fields: Optional[List[str]] = None,
-        sort_by: str = "_score",
+        sort: Union[Dict, List[Dict]] = {"_score": "desc"},
         sort_order: str = "desc",
         return_from: int = 0,
         return_size: int = 10,
@@ -221,7 +259,7 @@ class BigKindsClient:
             provider: 언론사 목록 (예: ["서울경제"])
             category: 카테고리 목록
             fields: 반환할 필드 목록
-            sort_by: 정렬 기준 (date, _score)
+            sort: 정렬 기준
             sort_order: 정렬 순서 (asc, desc)
             return_from: 페이징 시작 위치
             return_size: 반환할 결과 수
@@ -247,10 +285,11 @@ class BigKindsClient:
                 "from": date_from,
                 "until": date_to
             },
-            "sort": {sort_by: sort_order},
+            "sort": sort,
             "return_from": return_from,
             "return_size": return_size,
-            "fields": fields
+            "fields": fields,
+            "hilight": 1  # 하이라이트 정보 요청
         }
         
         # 쿼리 추가 (빈 문자열이 아닌 경우)
@@ -413,6 +452,86 @@ class BigKindsClient:
             return []
         except Exception as e:
             self.logger.error(f"TopN 조회 오류: {e}")
+            return []
+    
+    def get_word_cloud_keywords(
+        self,
+        keyword: str,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        limit: int = 30
+    ) -> List[Dict[str, Any]]:
+        """BigKinds 연관어 분석 API (TOPIC RANK 알고리즘)를 사용한 키워드 추출
+        
+        Args:
+            keyword: 검색할 키워드
+            date_from: 시작일 (YYYY-MM-DD)
+            date_to: 종료일 (YYYY-MM-DD)
+            limit: 반환할 키워드 수
+            
+        Returns:
+            연관어 목록 (키워드, 가중치 포함)
+        """
+        endpoint = API_ENDPOINTS["word_cloud"]
+        
+        # 날짜 기본값 설정
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            date_to = datetime.now().strftime("%Y-%m-%d")
+            
+        # BigKinds word_cloud API는 POST 방식을 사용
+        argument = {
+            "query": keyword,
+            "max": limit,
+            "published_at": {
+                "from": date_from,
+                "until": date_to
+            }
+        }
+        
+        try:
+            response = self._make_request("POST", endpoint, argument=argument)
+            self.logger.debug(f"Word Cloud API 응답: {response}")
+            
+            # BigKinds API는 result=0이 성공
+            if response.get("result") == 0:
+                # 연관어 결과 추출 및 가공 (실제 응답 구조: nodes 배열)
+                return_object = response.get("return_object", {})
+                nodes = return_object.get("nodes", [])
+                result = []
+                
+                for node in nodes:
+                    if isinstance(node, dict):
+                        # BigKinds word_cloud API의 실제 응답 구조
+                        word = node.get("name", "")
+                        weight = node.get("weight", 0.0)
+                        level = node.get("level", 1)  # 키워드 레벨 (1=핵심, 2=중요, 3=연관)
+                        
+                        if word and len(word) >= 2:  # 2글자 이상만 허용
+                            result.append({
+                                "keyword": word,
+                                "weight": float(weight),
+                                "count": int(weight),  # weight를 count로 사용
+                                "level": level  # 키워드 중요도 레벨
+                            })
+                
+                # 가중치 정규화 (최대값을 1.0으로)
+                if result:
+                    max_weight = max(item["weight"] for item in result)
+                    if max_weight > 0:
+                        for item in result:
+                            item["weight"] = item["weight"] / max_weight
+                
+                # 가중치 기준 내림차순 정렬하여 상위 limit개만 반환
+                result.sort(key=lambda x: x["weight"], reverse=True)
+                return result[:limit]
+            else:
+                self.logger.warning(f"Word Cloud API 응답 실패: result={response.get('result')}, reason={response.get('reason', '')}")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Word Cloud API 조회 오류: {e}")
             return []
     
     def extract_keywords(
@@ -615,12 +734,13 @@ class BigKindsClient:
 
         # 검색 쿼리 처리: 이미 따옴표와 괄호가 포함된 쿼리는 그대로 사용
         if company_name.startswith('(') and ('"' in company_name or "'" in company_name):
-            enhanced_query = company_name  # 이미 확장된 쿼리는 그대로 사용
+            enhanced_query = company_name
             self.logger.debug(f"확장된 쿼리 그대로 사용: {enhanced_query}")
         else:
-            # 단일 키워드는 따옴표로 감싸기
-            enhanced_query = f'"{company_name}"'
-            self.logger.debug(f"단일 키워드 따옴표 처리: {enhanced_query}")
+            # preprocess_query를 사용하여 핵심 키워드 검색으로 변경
+            keywords = preprocess_query(company_name)
+            enhanced_query = ' AND '.join([f'"{k}"' for k in keywords])
+            self.logger.debug(f"핵심 키워드 AND 검색: {enhanced_query}")
         
         # PRISM 기사 제외 (서울경제의 경우)
         if exclude_prism and provider and "서울경제" in provider:
@@ -631,7 +751,7 @@ class BigKindsClient:
 
         self.logger.info(f"최종 검색 쿼리: {enhanced_query}")
 
-        # 기업명으로 검색
+        # 기업명으로 검색 (search_news를 직접 호출하도록 변경)
         return self.search_news(
             query=enhanced_query,
             date_from=date_from,
@@ -659,10 +779,10 @@ class BigKindsClient:
         date_to: Optional[str] = None,
         return_size: int = 30
     ) -> Dict[str, Any]:
-        """키워드 기반 뉴스 검색
+        """키워드 기반 뉴스 검색 (Fallback 로직 적용)
         
         Args:
-            keyword: 검색 키워드
+            keyword: 검색 키워드 또는 질문
             date_from: 시작일
             date_to: 종료일
             return_size: 반환할 결과 수
@@ -670,30 +790,12 @@ class BigKindsClient:
         Returns:
             키워드 관련 뉴스 검색 결과
         """
-        # 날짜 기본값 설정
-        if not date_from:
-            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        if not date_to:
-            # BigKinds API의 until은 exclusive이므로 하루 더 추가
-            date_to = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            
-        # 키워드로 검색, 모든 언론사 대상
-        return self.search_news(
-            query=keyword,
+        return self.search_news_with_fallback(
+            keyword=keyword,
             date_from=date_from,
             date_to=date_to,
-            fields=[
-                "news_id",
-                "title",
-                "content", 
-                "published_at",
-                "category",
-                "provider_name",
-                "provider_link_page",
-                "byline",
-                "images"
-            ],
-            return_size=return_size
+            return_size=return_size,
+            sort=[{"date": "desc"}, {"_score": "desc"}] # 최신순 + 정확도순 정렬
         )
     
     def get_news_by_cluster_ids(self, cluster_ids: List[str]) -> Dict[str, Any]:

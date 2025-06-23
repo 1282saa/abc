@@ -30,6 +30,8 @@ from backend.api.routes.stock_calendar_routes import router as stock_calendar_ro
 from backend.api.routes.news_routes import router as news_router
 
 # 분리된 새 라우터들
+from backend.api.routes.briefing_routes import router as briefing_router
+from backend.api.routes.dashboard_routes import router as dashboard_router
 # TODO: 다음 분리된 라우터들도 추가
 # from backend.api.routes.company_news_routes import router as company_news_router
 # from backend.api.routes.search_routes import router as search_routes_router
@@ -69,6 +71,8 @@ app.include_router(stock_calendar_router)
 app.include_router(news_router)
 
 # 분리된 새 라우터들 등록
+app.include_router(briefing_router)
+app.include_router(dashboard_router)
 # TODO: 분리된 라우터들도 추가
 # app.include_router(company_news_router)
 # app.include_router(search_routes_router)

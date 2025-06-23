@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 import os
 import asyncio
 
-from backend.api.dependencies.bigkinds import get_bigkinds_client
-from backend.api.clients.bigkinds import BigKindsClient
+from backend.api.dependencies import get_bigkinds_client
+from backend.api.clients.bigkinds.client import BigKindsClient
 from backend.utils.logger import setup_logger
 from backend.services.content.question_generator_service import generate_refined_questions
 from backend.services.news.question_builder import sanitize_list

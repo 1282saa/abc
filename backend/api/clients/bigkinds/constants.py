@@ -36,5 +36,8 @@ DEFAULT_NEWS_FIELDS = [
     "provider_link_page",
     "provider_code",
     "provider_name",
-    "byline"
+    "byline",
+    "hilight",
+    "enveloped_at",
+    "url"
 ] 

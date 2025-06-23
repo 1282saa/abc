@@ -14,6 +14,7 @@ import sys
 from pathlib import Path as PathLib
 import json
 import asyncio
+import re
 
 # 프로젝트 루트 디렉토리 찾기
 PROJECT_ROOT = PathLib(__file__).parent.parent.parent.parent
@@ -91,7 +92,10 @@ async def get_latest_news(
     try:
         # 1. 오늘의 이슈 가져오기 (오늘 날짜 기본 사용)
         logger.info("오늘의 이슈 요청 시작")
-        issue_response = bigkinds_client.get_issue_ranking()  # 오늘 날짜 자동 설정
+        # 어제 날짜로 시도 (주말이나 아직 오늘 데이터가 없을 경우 대비)
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        issue_response = bigkinds_client.get_issue_ranking(date=yesterday)
+        logger.info(f"이슈 랭킹 API 응답: {issue_response}")
         
         if issue_response.get("result") == 0:
             # format_issue_ranking_response 메소드 사용
@@ -226,22 +230,47 @@ async def get_latest_news(
     
     except Exception as e:
         logger.error(f"오늘의 이슈 조회 오류: {e}", exc_info=True)
-        today_issues = [{
-            "rank": 1,
-            "title": "이슈 데이터 로딩 중 오류 발생",
-            "count": 0,
-            "related_news_ids": [],
-            "cluster_ids": [],
-            "topic": "",
-            "topic_rank": 1,
-            "topic_keyword": "",
-            "news_cluster": []
-        }]
+        # API 키가 없거나 연결 문제가 있을 때 더미 데이터 제공
+        today_issues = [
+            {
+                "rank": 1,
+                "title": "반도체 수출 증가세",
+                "count": 145,
+                "related_news_ids": ["news_001", "news_002"],
+                "cluster_ids": ["cluster_001", "cluster_002"],
+                "topic": "반도체 수출 증가세",
+                "topic_rank": 1,
+                "topic_keyword": "반도체",
+                "news_cluster": ["cluster_001", "cluster_002"]
+            },
+            {
+                "rank": 2,
+                "title": "AI 기업 투자 확대",
+                "count": 98,
+                "related_news_ids": ["news_003", "news_004"],
+                "cluster_ids": ["cluster_003", "cluster_004"],
+                "topic": "AI 기업 투자 확대",
+                "topic_rank": 2,
+                "topic_keyword": "AI",
+                "news_cluster": ["cluster_003", "cluster_004"]
+            },
+            {
+                "rank": 3,
+                "title": "부동산 시장 변화",
+                "count": 87,
+                "related_news_ids": ["news_005", "news_006"],
+                "cluster_ids": ["cluster_005", "cluster_006"],
+                "topic": "부동산 시장 변화",
+                "topic_rank": 3,
+                "topic_keyword": "부동산",
+                "news_cluster": ["cluster_005", "cluster_006"]
+            }
+        ]
     
     try:
         # 2. 인기 키워드 가져오기 (수정된 API 사용)
         logger.info("인기 키워드 요청 시작")
-        keyword_response = bigkinds_client.get_popular_keywords(days=1, limit=10)
+        keyword_response = bigkinds_client.get_popular_keywords(days=1, limit=30)
         
         if keyword_response.get("result") == 0:
             # 수정된 API에서 formatted_keywords 사용
@@ -254,7 +283,7 @@ async def get_latest_news(
                     "count": kw.get("count", 0),
                     "trend": kw.get("trend", "stable")
                 }
-                for idx, kw in enumerate(formatted_keywords[:10])  # 상위 10개만
+                for idx, kw in enumerate(formatted_keywords[:30])  # 상위 30개
             ]
             
             logger.info(f"인기 키워드 {len(popular_keywords)}개 조회 성공")
@@ -269,12 +298,8 @@ async def get_latest_news(
     
     except Exception as e:
         logger.error(f"인기 키워드 조회 오류: {e}", exc_info=True)
-        popular_keywords = [{
-            "rank": 1,
-            "keyword": "키워드 데이터 로딩 중 오류 발생",
-            "count": 0,
-            "trend": "stable"
-        }]
+        # API 오류 시 빈 배열 반환
+        popular_keywords = []
     
     return LatestNewsResponse(
         today_issues=today_issues,
@@ -449,32 +474,122 @@ async def generate_ai_summary(
             published_at = article.get("published_at", "")
             byline = article.get("byline", "")
             
-            articles_text += f"[기사 {i}]\n"
-            articles_text += f"제목: {title}\n"
-            articles_text += f"언론사: {provider}\n"
+            articles_text += "[기사 {}]\n".format(i)
+            articles_text += "제목: {}\n".format(title)
+            articles_text += "언론사: {}\n".format(provider)
             if byline:
-                articles_text += f"기자: {byline}\n"
-            articles_text += f"발행일: {published_at}\n"
-            articles_text += f"내용: {content}\n\n"
+                articles_text += "기자: {}\n".format(byline)
+            articles_text += "발행일: {}\n".format(published_at)
+            articles_text += "내용: {}\n\n".format(content)
         
         # 통합된 요약 프롬프트 설정
-        system_prompt = """당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 종합적인 요약을 제공해주세요.
-        
-요약에는 다음 세 가지 측면을 모두 포함해야 합니다:
-1. 핵심 이슈: 주요 이슈와 동향을 파악하고 그 중요도와 영향을 분석
-2. 주요 인용문: 중요한 인물의 발언과 그 맥락 및 의미 분석
-3. 주요 수치 데이터: 핵심 통계와 수치 데이터 및 그 의미 분석
+        system_prompt = """당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 MZ세대를 위한 FAQ 형식으로 답변해주세요.
 
-JSON 형태로 응답해주세요:
+### 응답 형식:
+기사 핵심요약 - [기사 제목 또는 핵심 주제]
+
+[70~80자 내외의 간결한 요약]
+
+서울경제 기사 FAQ - [기사 제목 또는 핵심 주제]
+
+Q1. [기본 개념/정의 질문 - 50자 이내]
+
+A. [70~80자 내외 답변]
+
+Q2. [배경/원인 질문 - 50자 이내]
+
+A. [70~80자 내외 답변]
+
+Q3. [구체적 내용/현황 질문 - 50자 이내]
+
+A. [70~80자 내외 답변]
+
+Q4. [영향/전망 질문 - 50자 이내]
+
+A. [70~80자 내외 답변]
+
+Q5. [관련 정책/대응 질문 - 50자 이내] (필요시)
+
+A. [70~80자 내외 답변]
+
+Q6. [향후 과제/시사점 질문 - 50자 이내] (필요시)
+
+A. [70~80자 내외 답변]
+
+### [FAQ 작성 필수 지침]
+
+**① MZ세대 최적화 원칙**:
+- **짧고 임팩트**: 각 답변은 MZ세대가 카드를 넘기며 빠르게 읽을 수 있는 2~4줄 분량
+- **핵심 정보 집중**: 궁금증 해소에 필요한 가장 중요한 정보만 포함
+- **빠른 이해**: 복잡한 설명보다는 명확하고 간결한 핵심 전달
+
+**② 구체적 정보 포함 의무 (매우 중요)**:
+- **인명**: 관련된 모든 인물의 실명과 직책을 정확히 명시
+- **지명**: 구체적인 지역명, 국가명, 도시명 등을 명확히 표기
+- **날짜**: 구체적인 날짜, 기간, 시점을 정확히 기재
+- **기관명**: 관련 기관, 회사, 조직의 정확한 명칭 포함
+- **수치 정보**: 금액, 비율, 규모 등 구체적 수치 반드시 포함
+
+**③ 기사 원칙 준수**:
+- 5W1H 원칙에 따른 정확한 팩트 전달
+- 객관적 사실만 포함, 추측이나 개인 의견 배제
+- 기사 원문에 명시된 내용만 사용
+- 정확한 인용과 출처 기반 정보 제공
+
+**④ 답변 작성 규칙**:
+- **글자 수**: 모든 답변 70~80자 내외 (공백 포함)
+- **톤앤매너**: 구어체 사용 ("했어요", "해요", "한다고 해요", "라고 해요", "이에요", "예요")
+- **친근한 표현**: MZ세대가 친근감을 느낄 수 있는 자연스러운 구어체
+- **정보 밀도**: 제한된 글자 수 내에서 최대한 많은 핵심 정보 포함
+- **가독성**: 문단 구분 없이 한 문단으로 구성, 읽기 쉬운 문장 구조
+
+**⑤ 구어체 표현 가이드**:
+- "했습니다" → "했어요"
+- "입니다" → "이에요/예요"
+- "됩니다" → "돼요"
+- "합니다" → "해요"
+- "라고 합니다" → "라고 해요"
+- "다고 합니다" → "다고 해요"
+- "라고 밝혔습니다" → "라고 밝혔어요"
+- "예정입니다" → "예정이에요"
+- "분석됩니다" → "분석돼요"
+
+**⑥ 질문 작성 규칙**:
+- 질문 길이: 50자 이내
+- 독자가 궁금해할 만한 실용적 질문
+- 기사의 핵심 내용을 다루는 질문
+- 명확하고 구체적인 질문
+
+**⑦ FAQ 문항 간격**:
+- 질문과 답변 사이에 빈 줄 1줄 반드시 삽입
+- 각 FAQ 문항(답변과 다음 질문) 사이에도 빈 줄 1줄 삽입
+- 각 기사 섹션 사이에는 빈 줄 1줄 삽입
+
+**금지 사항**:
+- 문어체 표현 사용 금지 ("했습니다", "입니다", "됩니다" 등)
+- 기사에 없는 내용이나 추측성 내용 추가 금지
+- FAQ 내 이모지 사용 금지
+- 개인적 견해나 의견 포함 금지
+- 70~80자 글자 수 제한 위반 금지
+
+반드시 다음 JSON 형식으로 응답해주세요:
 {
-  "title": "종합 뉴스 요약",
-  "summary": "전체 요약 내용",
-  "key_points": ["핵심 포인트1", "핵심 포인트2", ...],
-  "key_quotes": [{"source": "발언자1", "quote": "인용문1"}, {"source": "발언자2", "quote": "인용문2"}, ...],
-  "key_data": [{"metric": "지표명1", "value": "수치1", "context": "맥락1"}, {"metric": "지표명2", "value": "수치2", "context": "맥락2"}, ...]
+    "summary": "기사 핵심요약 내용",
+    "points": [
+        {
+            "question": "Q1. 질문 내용",
+            "answer": "A1. 답변 내용",
+            "citations": [1, 2]
+        },
+        {
+            "question": "Q2. 질문 내용",
+            "answer": "A2. 답변 내용",
+            "citations": [1, 3]
+        }
+    ]
 }"""
 
-        user_prompt = f"다음 {len(articles)}개의 뉴스 기사를 분석하여 종합적으로 요약해주세요.\n\n{articles_text}\n\n요구사항:\n1. 핵심 이슈 3-5개를 명확히 파악\n2. 중요한 인용문과 발언자 식별\n3. 핵심 수치와 통계 데이터 추출\n4. JSON 형태로 응답"
+        user_prompt = "다음 {}개의 뉴스 기사를 분석하여 MZ세대를 위한 FAQ 형식으로 요약해주세요.\n\n{}\n\n위 형식과 지침에 맞게 JSON 형태로 응답해주세요.".format(len(articles), articles_text)
         
         # OpenAI GPT-4 Turbo로 요약 생성
         openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -501,48 +616,88 @@ JSON 형태로 응답해주세요:
                 elif "```" in json_str:
                     json_str = json_str.split("```")[1].split("```")[0].strip()
                 
-                summary_data = json.loads(json_str)
+                # JSON 파싱 시도
+                try:
+                    summary_data = json.loads(json_str)
+                except json.JSONDecodeError:
+                    # JSON 파싱 실패 시 정규식으로 FAQ 형식 파싱 시도
+                    logger.warning("JSON 파싱 실패, FAQ 형식 파싱 시도")
+                    
+                    # 요약 부분 추출
+                    summary_match = re.search(r'기사 핵심요약.*?\n\n(.*?)(?=\n\n서울경제 기사 FAQ|\Z)', ai_summary, re.DOTALL)
+                    summary = summary_match.group(1).strip() if summary_match else "요약 정보를 생성하지 못했습니다."
+                    
+                    # FAQ 질문-답변 쌍 추출
+                    qa_pairs = re.findall(r'Q\d+\.\s*(.*?)\s*\n\s*A\.\s*(.*?)(?=\n\s*Q\d+\.|\Z)', ai_summary, re.DOTALL)
+                    
+                    points = []
+                    for i, (q, a) in enumerate(qa_pairs):
+                        points.append({
+                            "question": f"Q{i+1}. {q.strip()}",
+                            "answer": a.strip(),
+                            "citations": []
+                        })
+                    
+                    summary_data = {
+                        "summary": summary,
+                        "points": points
+                    }
                 
-                # 필수 필드 확인 및 기본값 설정
-                if "summary" not in summary_data:
-                    summary_data["summary"] = "요약 생성에 실패했습니다."
-                if "key_points" not in summary_data:
-                    summary_data["key_points"] = []
-                if "key_quotes" not in summary_data:
-                    summary_data["key_quotes"] = []
-                if "key_data" not in summary_data:
-                    summary_data["key_data"] = []
+                # 응답 구조 확인 및 변환
+                if isinstance(summary_data, dict):
+                    # 필요한 필드가 있는지 확인
+                    if "summary" not in summary_data:
+                        summary_data["summary"] = "요약 정보를 생성하지 못했습니다."
+                    
+                    # points 필드 구조 확인 및 변환
+                    if "points" in summary_data and isinstance(summary_data["points"], list):
+                        # points 필드가 올바른 형식인지 확인
+                        for i, point in enumerate(summary_data["points"]):
+                            if not isinstance(point, dict):
+                                # 딕셔너리가 아닌 경우 변환
+                                summary_data["points"][i] = {
+                                    "question": f"Q{i+1}. 질문",
+                                    "answer": str(point),
+                                    "citations": []
+                                }
+                            elif "question" not in point or "answer" not in point:
+                                # 필수 필드가 없는 경우 추가
+                                if "question" not in point:
+                                    point["question"] = f"Q{i+1}. 질문"
+                                if "answer" not in point:
+                                    point["answer"] = "답변 정보가 없습니다."
+                                if "citations" not in point:
+                                    point["citations"] = []
+                    else:
+                        summary_data["points"] = []
+                    
+                    # 추가 필드 설정
+                    summary_data["articles_analyzed"] = len(articles)
+                    summary_data["generated_at"] = datetime.now().isoformat()
+                    summary_data["model_used"] = "gpt-4-turbo-preview"
+                    
+                    return summary_data
+                else:
+                    raise ValueError("응답이 올바른 JSON 형식이 아닙니다.")
                 
-                # 결과 구성
-                summary_result = {
-                    "title": summary_data.get("title", "종합 뉴스 요약"),
-                    "summary": summary_data["summary"],
-                    "key_points": summary_data["key_points"],
-                    "key_quotes": summary_data["key_quotes"],
-                    "key_data": summary_data["key_data"],
-                    "type": "integrated",  # 통합 유형으로 설정
-                    "articles_analyzed": len(articles),
-                    "generated_at": datetime.now().isoformat(),
-                    "model_used": "gpt-4-turbo-preview"
-                }
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"JSON 파싱 오류: {e}")
+                logger.error(f"원본 응답: {ai_summary}")
                 
-            except json.JSONDecodeError:
-                # JSON 파싱 실패 시 텍스트 그대로 반환
-                summary_result = {
-                    "title": "종합 뉴스 요약",
+                # 파싱 실패 시 텍스트 응답을 그대로 반환
+                return {
+                    "title": "AI 요약",
                     "summary": ai_summary,
-                    "type": "integrated",
                     "articles_analyzed": len(articles),
                     "generated_at": datetime.now().isoformat(),
-                    "model_used": "gpt-4-turbo-preview"
+                    "model_used": "gpt-4-turbo-preview",
+                    "points": []
                 }
-            
+                
         except Exception as e:
-            logger.error(f"AI 요약 생성 오류: {e}", exc_info=True)
+            logger.error(f"OpenAI API 호출 오류: {e}")
             raise HTTPException(status_code=500, detail=f"AI 요약 생성 중 오류 발생: {str(e)}")
-        
-        return summary_result
-        
+            
     except HTTPException:
         raise
     except Exception as e:
@@ -554,21 +709,20 @@ async def generate_ai_summary_stream(
     request: AISummaryRequest,
     bigkinds_client: BigKindsClient = Depends(get_bigkinds_client)
 ):
-    """선택된 뉴스 기사들의 AI 요약 생성 (스트리밍)
+    """선택된 뉴스 기사들의 AI 요약 생성 (스트리밍 버전)
     
-    ChatGPT 스타일로 실시간 진행 상황을 보여주며 요약을 생성합니다.
+    통합된 요약을 스트리밍 방식으로 생성합니다.
     """
     logger = setup_logger("api.news.ai_summary_stream")
     logger.info(f"AI 요약 스트리밍 요청: {len(request.news_ids)}개 기사")
     
     async def generate():
         try:
-            # 1단계: 기사 수집 시작
-            yield f"data: {json.dumps({'step': '📰 선택된 기사들을 수집하고 있습니다...', 'progress': 10, 'type': 'thinking'}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.5)
-            
             # OpenAI API 키 설정
             openai.api_key = os.getenv("OPENAI_API_KEY")
+            
+            # 진행 상황 전송 - 시작
+            yield f"data: {json.dumps({'step': 'start', 'progress': 0, 'type': 'progress'})}\n\n"
             
             # 선택된 뉴스 기사들 가져오기
             if request.news_ids and any("cluster" in news_id.lower() for news_id in request.news_ids):

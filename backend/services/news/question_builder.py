@@ -148,9 +148,16 @@ def score_keywords(
         scores[kw] = scores.get(kw, 0) + (len(topn) - i) * 0.7
     
     # 중복 키워드 보너스 (+5)
-    for kw in set(rel) & set(topn):
-        if kw in scores:  # 이미 점수가 있는 경우만 추가
-            scores[kw] += 5
+    try:
+        # 안전하게 집합 생성
+        rel_set = set(kw for kw in rel if isinstance(kw, (str, int, float, bool, tuple)))
+        topn_set = set(kw for kw in topn if isinstance(kw, (str, int, float, bool, tuple)))
+        
+        for kw in rel_set & topn_set:
+            if kw in scores:  # 이미 점수가 있는 경우만 추가
+                scores[kw] += 5
+    except Exception as e:
+        logger.warning(f"중복 키워드 보너스 계산 오류: {e}")
     
     # 최근성 가중치 (1.5배)
     for kw in recent_set:
@@ -181,25 +188,31 @@ def sanitize_list(data: Any, name: str = "unknown") -> List[str]:
     
     try:
         # None이거나 빈 값인 경우
-        if not data:
-            logger.debug(f"{name} 데이터가 없음")
+        if data is None:
+            logger.debug(f"{name} 데이터가 None")
+            return result
+            
+        # 빈 리스트인 경우
+        if isinstance(data, list) and len(data) == 0:
+            logger.debug(f"{name} 데이터가 빈 리스트")
             return result
         
         # 리스트가 아니면 빈 리스트 반환
         if not isinstance(data, list):
             logger.warning(f"{name} 데이터가 리스트가 아님: {type(data)}")
+            # 문자열인 경우 리스트로 변환
+            if isinstance(data, str):
+                return [data] if data.strip() else []
             return result
             
         # 중첩 리스트 처리
         for item in data:
             try:
-                # 중첩 리스트인 경우
+                # 중첩 리스트인 경우 재귀적으로 처리
                 if isinstance(item, list):
-                    # 리스트 내 첫 문자열 항목만 추가
-                    for subitem in item:
-                        if isinstance(subitem, str) and subitem.strip():
-                            result.append(subitem.strip())
-                            break
+                    # 중첩 리스트를 평탄화
+                    flattened = sanitize_list(item, f"{name}-nested")
+                    result.extend(flattened)
                 # 딕셔너리인 경우 (word 키가 있으면 추출)
                 elif isinstance(item, dict):
                     if "word" in item and isinstance(item["word"], str):
@@ -210,6 +223,10 @@ def sanitize_list(data: Any, name: str = "unknown") -> List[str]:
                         name_val = item["name"].strip()
                         if name_val:
                             result.append(name_val)
+                    elif "keyword" in item and isinstance(item["keyword"], str):
+                        keyword_val = item["keyword"].strip()
+                        if keyword_val:
+                            result.append(keyword_val)
                 # 문자열인 경우 바로 추가
                 elif isinstance(item, str):
                     cleaned_item = item.strip()
@@ -218,8 +235,12 @@ def sanitize_list(data: Any, name: str = "unknown") -> List[str]:
                 # 숫자나 기타 타입은 문자열로 변환
                 elif isinstance(item, (int, float)):
                     result.append(str(item))
+                # 튜플인 경우 첫 번째 요소만 사용
+                elif isinstance(item, tuple) and len(item) > 0:
+                    if isinstance(item[0], str):
+                        result.append(item[0])
             except Exception as e:
-                logger.warning(f"{name} 데이터 항목 처리 오류: {e}")
+                logger.warning(f"{name} 데이터 항목 처리 오류: {e}, 항목 타입: {type(item)}")
                 continue
     
     except Exception as e:
@@ -284,7 +305,9 @@ async def build_questions(
         
         # API 응답 로깅 (디버깅용)
         logger.debug(f"연관어 API 응답 형식: {type(rel30_raw)}")
+        logger.debug(f"연관어 API 원본 데이터: {rel30_raw[:5] if rel30_raw else []}...")  # 처음 5개만 로깅
         logger.debug(f"TopN API 응답 형식: {type(top30_raw)}")
+        logger.debug(f"TopN API 원본 데이터: {top30_raw[:5] if top30_raw else []}...")  # 처음 5개만 로깅
         
         # 데이터 정제 (해시 불가능한 요소 제거)
         rel30 = sanitize_list(rel30_raw, "연관어")
@@ -292,6 +315,7 @@ async def build_questions(
         
     except Exception as e:
         logger.error(f"키워드 수집 오류: {str(e)}")
+        logger.error(f"키워드 수집 상세 오류: {type(e).__name__}", exc_info=True)
         return [basic_question]  # 오류 시 기본 질문만 반환
     
     # 최근 7일 추가 가중치 세트
@@ -311,13 +335,21 @@ async def build_questions(
         
     except Exception as e:
         logger.error(f"최근 연관어 수집 오류: {str(e)}")
+        logger.error(f"최근 연관어 수집 상세 오류: {type(e).__name__}", exc_info=True)
         recent_set = set()
     
     # 2. 전처리
     logger.debug(f"수집된 연관어: {len(rel30)}개, TopN: {len(top30)}개, 최근 7일: {len(recent_set)}개")
     
     try:
-        kws = merge_similar(filter_keywords(rel30 + top30))
+        # 리스트 합치기 전에 안전성 확인
+        combined_keywords = []
+        if rel30 and isinstance(rel30, list):
+            combined_keywords.extend(rel30)
+        if top30 and isinstance(top30, list):
+            combined_keywords.extend(top30)
+            
+        kws = merge_similar(filter_keywords(combined_keywords))
         scores = score_keywords(rel30, top30, recent_set)
         
         # 상위 15개 키워드 선택
@@ -325,6 +357,7 @@ async def build_questions(
         logger.debug(f"필터링 후 상위 키워드: {kws}")
     except Exception as e:
         logger.error(f"키워드 전처리 오류: {str(e)}")
+        logger.error(f"키워드 전처리 상세 오류: {type(e).__name__}", exc_info=True)
         return [basic_question]  # 오류 시 기본 질문만 반환
     
     # 키워드가 없는 경우 기본 질문만 반환

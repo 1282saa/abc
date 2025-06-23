@@ -20,8 +20,8 @@ from backend.constants.entity_variants import (
     expand_query_with_fuzzy_search,
     search_entities
 )
-from backend.api.clients.bigkinds import BigKindsClient
-from backend.api.dependencies.bigkinds import get_bigkinds_client
+from backend.api.clients.bigkinds.client import BigKindsClient
+from backend.api.dependencies import get_bigkinds_client
 from backend.utils.logger import setup_logger
 
 # API 라우터 생성

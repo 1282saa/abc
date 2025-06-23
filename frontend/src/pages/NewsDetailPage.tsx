@@ -2,20 +2,11 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import LoadingSpinner from "../components/common/LoadingSpinner";
-
-interface NewsArticle {
-  id: string;
-  title: string;
-  summary: string;
-  content?: string;
-  provider: string;
-  url: string;
-  category: string;
-  byline: string;
-  images: string[];
-  published_at?: string;
-  ref_id?: string;
-}
+import {
+  getNewsDetail,
+  NewsArticle,
+  getArticleLink,
+} from "../services/newsApi";
 
 interface CustomQuestion {
   id: string;
@@ -50,11 +41,7 @@ const NewsDetailPage: React.FC = () => {
 
       setLoading(true);
       try {
-        const response = await fetch(`/api/news/detail/${newsId}`);
-        if (!response.ok) {
-          throw new Error("기사를 불러오는데 실패했습니다");
-        }
-        const data = await response.json();
+        const data = await getNewsDetail(newsId);
         setArticle(data.news);
       } catch (err) {
         setError(
@@ -77,7 +64,7 @@ const NewsDetailPage: React.FC = () => {
 다만 삼성전자 노사가 4월 사업장 삼과각 제도 개선 TF와 선택적 복리후생 TF 운영에는 차질이 생길 가능성이 커졌다. 당초 노사는 매주 워크숍 TF 회의를 직접 열고 6월까지 개선안을 마련하기로 했다.`;
 
         setArticle({
-          id: newsId || "1",
+          news_id: newsId || "1",
           title: "삼성전자 노조 집행부 전원 사임...'비대위 체제 전환'",
           summary:
             "최근 조직 내부를 뒤흔든 삼성전자(005930) 내 최대 노조인 전국삼성전자노동조합(전삼노) 집행부가 임기 9개월가량을 남기고 전원 사임했다.",
@@ -274,9 +261,9 @@ const NewsDetailPage: React.FC = () => {
             <span>뒤로</span>
           </button>
 
-          {article.url && (
+          {article && (
             <a
-              href={article.url}
+              href={getArticleLink(article)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
